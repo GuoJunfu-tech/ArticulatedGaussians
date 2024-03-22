@@ -51,14 +51,12 @@ def training(opt):
         )
         mid_loss = ((movable_factor - 0.5) ** 2).sum()
         cd_loss = chamfer_distance_loss(new_xyz, gt_xyz)
-        loss = cd_loss + mid_loss * 0.1
+        loss = cd_loss + mid_loss
         loss.backward()
 
         with torch.no_grad():
             if iteration % 10 == 0:
-                progress_bar.set_postfix(
-                    {"CD Loss": f"{cd_loss:.{7}f}", "mid Loss": f"{mid_loss:.{7}f}"}
-                )
+                progress_bar.set_postfix({"CD Loss": f"{cd_loss:.{7}f}", "mid Loss": f"{mid_loss:.{7}f}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()

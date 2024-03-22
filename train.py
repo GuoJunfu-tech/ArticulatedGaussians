@@ -18,6 +18,7 @@ from argparse import ArgumentParser, Namespace
 import torch
 from tqdm import tqdm
 import uuid
+import dill as pickle
 
 from utils.loss_utils import l1_loss, ssim, kl_divergence, chamfer_distance_loss
 from utils.general_utils import farthest_point_sampling
@@ -53,16 +54,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     iter_start = torch.cuda.Event(enable_timing=True)
     iter_end = torch.cuda.Event(enable_timing=True)
 
-    # set the viewpoint stack into two stacks, one for the start frame and one for the end frame
-    # TODO: this operation is really dump, we should read the frames separately
-    viewpoint_stack_full = scene.getTrainCameras().copy()
-    viewpoint_stack_start_frame = []
-    viewpoint_stack_end_frame = []
-    for viewpoint_cam in viewpoint_stack_full:
-        if viewpoint_cam.fid == 0:
-            viewpoint_stack_start_frame.append(viewpoint_cam)
-        else:
-            viewpoint_stack_end_frame.append(viewpoint_cam)
+    viewpoint_stack = scene.getTrainCameras().copy()
 
     ema_loss_for_log = 0.0
     best_psnr = 0.0
@@ -72,93 +64,63 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         lr_init=0.1, lr_final=1e-15, lr_delay_mult=0.01, max_steps=20000
     )
 
-    # load gaussians
-    import dill as pickle
+    # # load gaussians
+    # import dill as pickle
 
-    with open("./load_data/first_frame_gaussian.pkl", "rb") as f:
-        gaussians = pickle.load(f)
-    with open("./load_data/end_frame_gaussian.pkl", "rb") as f:
-        end_frame_gaussians = pickle.load(f)
+    # with open("./load_data/first_frame_gaussian.pkl", "rb") as f:
+    #     gaussians = pickle.load(f)
+    # with open("./load_data/end_frame_gaussian.pkl", "rb") as f:
+    #     end_frame_gaussians = pickle.load(f)
 
-    gt_xyz = farthest_point_sampling(
-        end_frame_gaussians["gaussians"].get_xyz.detach(), 1000
-    )
-
-    viewpoint_stack = None
-    for iteration in range(1 + opt.only_train_start_frame_gaussian, opt.iterations + 1):
+    for iteration in range(1, opt.iterations + 1):
         iter_start.record()
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
 
+        if not viewpoint_stack:
+            viewpoint_stack = scene.getTrainCameras().copy()
+
+        viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
         if dataset.load2gpu_on_the_fly:
             viewpoint_cam.load2device()
-        # fid = viewpoint_cam.fid
-        # if iteration == 2000:
-        #     import dill as pickle
+        fid = viewpoint_cam.fid
 
-        #     with open("first_frame_gaussian.pkl", "wb") as f:
-        #         pickle.dump(gaussians, f)
-        #         exit()
-
-        if iteration == opt.train_deform_param_and_movable_net:
+        if iteration == opt.warm_up:
             scene.save(iteration)
             # deform.save_weights(args.model_path, iteration)
-            print(f"predicted articulated params:")
-            print(
-                f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta.item()}"
-            )
-            print(f"movable factors:")
+            # print(f"predicted articulated params:")
+            # print(
+            #     f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta.item()}"
+            # )
+            # print(f"movable factors:")
             with torch.no_grad():
-                factors = deform.movable_network(gaussians.get_xyz)
-                move_parts = factors[factors > 0.8].shape[0]
-                unmove_parts = factors[factors < 0.2].shape[0]
-                print(
-                    f"move_parts: {move_parts}, unmove parts: {unmove_parts}, factors: {factors.shape[0]}"
-                )
-            get_images(
-                viewpoint_stack_end_frame,
-                gaussians,
-                deform,
-                revolute,
-                pipe,
-                background,
-            )
-            # import dill as pickle
+                #     factors = deform.movable_network(gaussians.get_xyz)
+                #     move_parts = factors[factors > 0.8].shape[0]
+                #     unmove_parts = factors[factors < 0.2].shape[0]
+                #     print(
+                #         f"move_parts: {move_parts}, unmove parts: {unmove_parts}, factors: {factors.shape[0]}"
+                #     )
+                # get_images(
+                #     viewpoint_stack_end_frame,
+                #     gaussians,
+                #     deform,
+                #     revolute,
+                #     pipe,
+                #     background,
+                # )
 
-            # data = {"gaussians": gaussians}
-            # with open("end_frame_gaussians.pkl", "wb") as f:
-            #     pickle.dump(data, f)
+                data = {"gaussians": gaussians}
+                with open("warm_up_gaussians.pkl", "wb") as f:
+                    pickle.dump(data, f)
 
             exit()
-        if iteration < opt.only_train_start_frame_gaussian:
-            if not viewpoint_stack:
-                viewpoint_stack = viewpoint_stack_start_frame.copy()
+        if iteration < opt.warm_up:
+            new_xyz, new_rotations = gaussians.get_xyz, gaussians.get_rotation
 
-            viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
-            if dataset.load2gpu_on_the_fly:
-                viewpoint_cam.load2device()
-
-            # d_xyz, d_rotation = 0.0, 0.0
-            # fid = viewpoint_cam.fid
-            new_xyz, new_rotations = None, None
-
-        if iteration == opt.only_train_start_frame_gaussian:
-            viewpoint_stack = None
+        elif iteration < opt.deformation:
             print(f"step 1 is over, now training deformation net")
-
-        if (
-            opt.only_train_start_frame_gaussian
-            < iteration
-            < opt.train_deform_param_and_movable_net
-        ):
-            if not viewpoint_stack:
-                viewpoint_stack = viewpoint_stack_end_frame.copy()
-
-            viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
-            if dataset.load2gpu_on_the_fly:
-                viewpoint_cam.load2device()
 
             # N = gaussians.get_xyz.shape[0]
 
@@ -195,12 +157,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
 
-        cd_loss = chamfer_distance_loss(new_xyz, gt_xyz)
-        # loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (
-        #     1.0 - ssim(image, gt_image)
-        # )
-        # loss = loss + cd_loss
-        loss = cd_loss
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (
+            1.0 - ssim(image, gt_image)
+        )
 
         loss.backward()
 
@@ -213,9 +172,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
             if iteration % 10 == 0:
-                progress_bar.set_postfix(
-                    {"Loss": f"{ema_loss_for_log:.{7}f}", "cd_loss": f"{cd_loss:.{7}f}"}
-                )
+                progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
@@ -231,7 +188,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             #     deform.save_weights(args.model_path, iteration)
 
             # Densification
-            if iteration < opt.only_train_start_frame_gaussian:  # TODO to be changed
+            if iteration < opt.deformation:  # TODO to be changed
                 gaussians.add_densification_stats(
                     viewspace_point_tensor, visibility_filter
                 )
@@ -251,18 +208,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     )
 
                 # TODO find why these
-                # if iteration % opt.opacity_reset_interval == 0 or (
-                #     dataset.white_background and iteration == opt.densify_from_iter
-                # ):
-                #     gaussians.reset_opacity()
+                if iteration % opt.opacity_reset_interval == 0 or (
+                    dataset.white_background and iteration == opt.densify_from_iter
+                ):
+                    gaussians.reset_opacity()
 
             # Optimizer step
-            if iteration < opt.only_train_start_frame_gaussian:  # TODO temporary used
-                gaussians.optimizer.step()
-                gaussians.update_learning_rate(iteration)
-                gaussians.optimizer.zero_grad(set_to_none=True)
+            # if iteration < opt.warm_up:
+            gaussians.optimizer.step()
+            gaussians.update_learning_rate(iteration)
+            gaussians.optimizer.zero_grad(set_to_none=True)
 
-            if opt.only_train_start_frame_gaussian < iteration < opt.iterations:
+            if opt.warm_up < iteration < opt.iterations:
                 deform.optimizer.step()
                 deform.optimizer.zero_grad()
                 deform.update_learning_rate(iteration)
