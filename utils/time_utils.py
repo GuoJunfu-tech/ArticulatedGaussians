@@ -156,7 +156,7 @@ class MovableNetwork(nn.Module):
     def __init__(
         self,
         D=4,
-        W=64,
+        W=128,
         input_ch=3,
         output_ch=59,
         multires=10,
@@ -187,13 +187,9 @@ class MovableNetwork(nn.Module):
         h = x_emb
         for i, l in enumerate(self.linear):
             h = self.linear[i](h)
-            h = F.relu(h)
+            h = torch.relu(h)
 
         h = self.movable_warp(h)
-        # is_movable = torch.tanh(
-        #     h * 0.1
-        # )  # TODO maybe try more activate functions with higher gradient
-        # is_movable = (1 + is_movable) / 2.0
-        is_movable = torch.sigmoid(h)
+        is_movable = torch.tanh(h)
 
         return is_movable

@@ -47,7 +47,7 @@ def training(opt):
 
     for iteration in range(ITERATION):
         new_xyz, new_rotations, movable_factor = deform.step(
-            xyz, rotations, revolute.axis, revolute.pivot, revolute.theta
+            xyz, rotations, revolute._axis, revolute._pivot, revolute._theta
         )
         mid_loss = ((movable_factor - 0.5) ** 2).sum()
         cd_loss = chamfer_distance_loss(new_xyz, gt_xyz)
@@ -56,7 +56,9 @@ def training(opt):
 
         with torch.no_grad():
             if iteration % 10 == 0:
-                progress_bar.set_postfix({"CD Loss": f"{cd_loss:.{7}f}", "mid Loss": f"{mid_loss:.{7}f}"})
+                progress_bar.set_postfix(
+                    {"CD Loss": f"{cd_loss:.{7}f}", "mid Loss": f"{mid_loss:.{7}f}"}
+                )
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
@@ -73,7 +75,7 @@ def training(opt):
 
     print(f"training complete!")
     print(
-        f"final rotate params: \naxis: {revolute.axis.tolist()}, \npivot:{revolute.pivot.tolist()}, \ntheta: {revolute.theta.item()}"
+        f"final rotate params: \naxis: {revolute._axis.tolist()}, \npivot:{revolute._pivot.tolist()}, \ntheta: {revolute._theta.item()}"
     )
     return new_xyz, gt_xyz, factors
 

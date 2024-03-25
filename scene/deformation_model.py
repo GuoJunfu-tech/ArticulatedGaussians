@@ -17,11 +17,18 @@ class DeformModel:
         self.spatial_lr_scale = 5
         self.deform_operator = RotationOperator()
 
-    def step(self, xyz, rotation, axis, point_on_axis, theta, is_render=False):
-        return self.deform(xyz, rotation, axis, point_on_axis, theta, is_render)
+    def step(self, xyz, rotation, axis, point_on_axis, theta, fid):
+        return self.deform(xyz, rotation, axis, point_on_axis, theta, fid)
 
     def deform(
-        self, xyz, rotation, axis, point_on_axis, theta, is_render=False, factor=None
+        self,
+        xyz: torch.Tensor,
+        rotation: torch.Tensor,
+        axis: torch.Tensor,
+        point_on_axis: torch.Tensor,
+        theta: torch.Tensor,
+        fid: int,
+        factor: torch.Tensor = None,
     ):
         xyz = xyz.detach()
         quaternions = rotation.detach()
@@ -30,6 +37,16 @@ class DeformModel:
             movable_factor = factor
         else:
             movable_factor = self.movable_network(xyz)
+
+        if fid == 0:
+            id_factor = (movable_factor < 0) * 1 + (movable_factor >= 0) * 1e-3
+            movable_factor = movable_factor * id_factor
+
+        elif fid == 1:
+            id_factor = (movable_factor > 0) * 1 + (movable_factor <= 0) * 1e-3
+            movable_factor = movable_factor * id_factor
+        else:
+            raise ValueError(f"Invalid f_id type ({fid.type()}!")
 
         # if is_render:
         #     movable_factor = (movable_factor > 1e-3).float()
@@ -43,7 +60,6 @@ class DeformModel:
             quaternions, axis, theta * movable_factor
         )  # return the intermediate quaternion depend on movable_factor
 
-        # new_xyz = xyz + movable_factor * (moved_xyz - xyz)
         new_rotations = moved_quaternion
         return new_xyz, new_rotations, movable_factor
 

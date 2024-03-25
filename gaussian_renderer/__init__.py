@@ -37,8 +37,9 @@ def render(
     pc: GaussianModel,
     pipe,
     bg_color: torch.Tensor,
-    new_xyz,
-    new_rotations,
+    new_xyz=None,
+    new_rotations=None,
+    new_opacities=None,
     d_scaling=0.0,
     is_6dof=False,
     scaling_modifier=1.0,
@@ -102,7 +103,10 @@ def render(
         raise ValueError("new_xyz must be a tensor or None!")
 
     means2D = screenspace_points
-    opacity = pc.get_opacity
+    if new_opacities is None:
+        opacity = pc.get_opacity
+    else:
+        opacity = new_opacities
 
     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
     # scaling / rotation by the rasterizer.

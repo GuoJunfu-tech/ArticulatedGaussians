@@ -93,8 +93,8 @@ class OptimizationParams(ParamGroup):
         self.opacity_lr = 0.05
         self.scaling_lr = 0.001
         self.rotation_lr = 0.001
-        self.movable_lr_init = 0.0001
-        self.movable_lr_final = 0.000001
+        self.movable_lr_init = 0.000001
+        self.movable_lr_final = 0.0000000001
         self.movable_lr_delay_mult = 0.01
         self.percent_dense = 0.01
         self.lambda_dssim = 0.2
@@ -104,8 +104,10 @@ class OptimizationParams(ParamGroup):
         self.densify_until_iter = 15_000
         self.densify_grad_threshold = 0.0002
 
-        self.warm_up = 3000
-        self.deformation = 10000
+        self.warm_up = 7000
+        self.joint_deformation = 8000
+        self.fix_arti = [9000, 19000]
+        self.fix_deform = [9500, 17000]
 
         super().__init__(parser, "Optimization Parameters")
 
