@@ -53,11 +53,11 @@ class DeformModel:
 
         axis = axis / torch.linalg.norm(axis)
         new_xyz = self.deform_operator.get_new_location(
-            xyz, axis, point_on_axis, theta * movable_factor
+            xyz, axis, point_on_axis, movable_factor
         )
 
         moved_quaternion = self.deform_operator.get_new_quaternion(
-            quaternions, axis, theta * movable_factor
+            quaternions, axis, movable_factor
         )  # return the intermediate quaternion depend on movable_factor
 
         new_rotations = moved_quaternion

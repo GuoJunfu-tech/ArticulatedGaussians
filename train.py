@@ -65,22 +65,22 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     )
 
     # # load gaussians
-    # import dill as pickle
+    import dill as pickle
 
     # with open("./load_data/first_frame_gaussian.pkl", "rb") as f:
     #     gaussians = pickle.load(f)
     # with open("./load_data/end_frame_gaussian.pkl", "rb") as f:
     #     end_frame_gaussians = pickle.load(f)
 
-    # with open("./warm_up_gaussians.pkl", "rb") as f:
-    #     gaussians = pickle.load(f)
+    with open("./warm_up_gaussians.pkl", "rb") as f:
+        gaussians = pickle.load(f)
 
-    for iteration in range(1, opt.warm_up + 1):
+    for iteration in range(opt.warm_up + 1, opt.joint_deformation + 1):
         iter_start.record()
 
-        # Every 1000 its we increase the levels of SH up to a maximum degree
-        if iteration % 1000 == 0:
-            gaussians.oneupSHdegree()
+        # # Every 1000 its we increase the levels of SH up to a maximum degree
+        # if iteration % 1000 == 0:
+        #     gaussians.oneupSHdegree()
 
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()
@@ -90,40 +90,38 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             viewpoint_cam.load2device()
         fid = viewpoint_cam.fid
 
-        if iteration == opt.warm_up + 1:
+        if iteration == opt.joint_deformation:
             # scene.save(iteration)
             # # deform.save_weights(args.model_path, iteration)
-            # print(f"predicted articulated params:")
-            # axis = revolute.axis
-            # axis = axis / torch.linalg.norm(axis) + 1e-8
-            # print(
-            #     f"axis: {axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta.item()}"
-            # )
-            # # print(f"movable factors:")
-            # with torch.no_grad():
-            #     factors = deform.movable_network(gaussians.get_xyz)
-            #     move_parts_p = (factors > 0.8).sum().item()
-            #     move_parts_n = (factors < -0.8).sum().item()
+            print(f"predicted articulated params:")
+            axis = revolute.get_axis.detach()
+            axis = axis / torch.linalg.norm(axis) + 1e-8
+            print(
+                f"axis: {axis.tolist()}\n pivot: {revolute.get_pivot.tolist()}\n theta: {revolute.get_theta.item()}"
+            )
+            # print(f"movable factors:")
+            with torch.no_grad():
+                factors = deform.movable_network(gaussians.get_xyz)
+                # move_parts_p = (factors > 0.8).sum().item()
+                # move_parts_n = (factors < -0.8).sum().item()
 
-            #     unmove_parts_mask = (-0.2 < factors) & (factors < 0.2)
-            #     unmove_parts = unmove_parts_mask.sum().item()
-            #     print(
-            #         f"positive move parts: {move_parts_p}, negative move parts: {move_parts_n}, unmove parts: {unmove_parts}, factors: {factors.shape[0]}"
-            #     )
-            # viewpoint_stack = scene.getTrainCameras().copy()
-            # get_images(
-            #     viewpoint_stack,
-            #     gaussians,
-            #     deform,
-            #     revolute,
-            #     pipe,
-            #     background,
-            # )
+                unmove_parts_mask = (-0.1 < factors) & (factors < 0.1)
+                unmove_parts = unmove_parts_mask.sum().item()
+                print(f"unmove parts: {unmove_parts}, factors: {factors.shape[0]}")
+            viewpoint_stack = scene.getTrainCameras().copy()
+            get_images(
+                viewpoint_stack,
+                gaussians,
+                deform,
+                revolute,
+                pipe,
+                background,
+            )
 
-            data = {"gaussians": gaussians}
-            with open("warm_up_gaussians.pkl", "wb") as f:
-                pickle.dump(data, f)
-            print("data saved")
+            # data = {"gaussians": gaussians}
+            # with open("warm_up_gaussians.pkl", "wb") as f:
+            #     pickle.dump(data, f)
+            # print("data saved")
 
             exit()
         # if iteration == opt.warm_up:
@@ -133,7 +131,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         if iteration < opt.warm_up + 1:
             new_xyz, new_rotations = gaussians.get_xyz, gaussians.get_rotation
 
-        elif opt.warm_up + 1 < iteration < opt.joint_deformation:
+        elif opt.warm_up + 1 <= iteration <= opt.joint_deformation:
             # N = gaussians.get_xyz.shape[0]
 
             # deformation
@@ -160,8 +158,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             background,
             new_xyz,
             new_rotations,
-            d_scaling,
-            dataset.is_6dof,
         )
         image, viewspace_point_tensor, visibility_filter, radii = (
             render_pkg_re["render"],
@@ -200,27 +196,27 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 gaussians.max_radii2D[visibility_filter], radii[visibility_filter]
             )
             # Log and save
-            # cur_psnr = training_report(
-            #     tb_writer,
-            #     iteration,
-            #     Ll1,
-            #     loss,
-            #     l1_loss,
-            #     iter_start.elapsed_time(iter_end),
-            #     testing_iterations,
-            #     scene,
-            #     render,
-            #     (pipe, background),
-            #     deform,
-            #     revolute,
-            #     dataset.load2gpu_on_the_fly,
-            #     dataset.is_6dof,
-            # )
+            cur_psnr = training_report(
+                tb_writer,
+                iteration,
+                Ll1,
+                loss,
+                l1_loss,
+                iter_start.elapsed_time(iter_end),
+                testing_iterations,
+                scene,
+                render,
+                (pipe, background),
+                deform,
+                revolute,
+                dataset.load2gpu_on_the_fly,
+                dataset.is_6dof,
+            )
 
-            # if iteration in saving_iterations:
-            #     print("\n[ITER {}] Saving Gaussians".format(iteration))
-            #     scene.save(iteration)
-            #     deform.save_weights(args.model_path, iteration)
+            if iteration in saving_iterations:
+                print("\n[ITER {}] Saving Gaussians".format(iteration))
+                scene.save(iteration)
+                deform.save_weights(args.model_path, iteration)
 
             # Densification
             if iteration < opt.iterations:  # TODO to be changed
@@ -429,13 +425,18 @@ def get_images(
         new_xyz, new_rotations, factors = deformModel.deform(
             gaussians.get_xyz,
             gaussians.get_rotation,
-            revoluteParams.axis,
-            revoluteParams.pivot,
-            revoluteParams.theta,
+            revoluteParams.get_axis,
+            revoluteParams.get_pivot,
+            revoluteParams.get_theta,
             fid,
         )
         render_pkg_re = render(
-            cam, gaussians, pipe, background, new_xyz, new_rotations, 0.0, False
+            cam,
+            gaussians,
+            pipe,
+            background,
+            new_xyz,
+            new_rotations,
         )
         image = render_pkg_re["render"]
         image_np = image.detach().cpu().numpy().transpose((1, 2, 0))

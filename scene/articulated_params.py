@@ -24,15 +24,16 @@ class Revolute:
             device="cuda",
         )
         self.optimizer = torch.optim.Adam(
-            [self._axis, self._theta, self._pivot], lr=0.01, eps=2e-15
-        )
+            [self._axis, self._pivot], lr=0.01, eps=2e-15
+        )  # Remark! no theta!!
+
         self.scheduler = torch.optim.lr_scheduler.StepLR(
             self.optimizer, step_size=100, gamma=0.99
         )
 
     @property
     def get_axis(self):
-        return self._axis.detach().tolist()
+        return self._axis
 
     @get_axis.setter
     def set_axis(self, axis: torch.Tensor):
@@ -40,7 +41,7 @@ class Revolute:
 
     @property
     def get_theta(self):
-        return self._theta.detach().item()
+        return torch.tanh(self._theta) * math.pi
 
     @get_theta.setter
     def set_theta(self, theta: torch.Tensor):
@@ -51,7 +52,7 @@ class Revolute:
 
     @property
     def get_pivot(self):
-        return self._pivot.detach().tolist()
+        return self._pivot
 
     @get_pivot.setter
     def set_pivot(self, pivot: torch.Tensor):

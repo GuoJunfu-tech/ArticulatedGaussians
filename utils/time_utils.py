@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -190,6 +191,6 @@ class MovableNetwork(nn.Module):
             h = torch.relu(h)
 
         h = self.movable_warp(h)
-        is_movable = torch.tanh(h)
+        is_movable = torch.tanh(h) * math.pi
 
         return is_movable
