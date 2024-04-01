@@ -8,6 +8,7 @@ class ViewpointLoader:
         self._viewpoint_frames = {}
         self._current_stack = None
         self._current_fid = None
+        self._current_stack_dual = {}
 
     def _load_frame_viewpoint(self):
         for viewpoint_cam in self._full_viewpoint:
@@ -34,6 +35,10 @@ class ViewpointLoader:
         self._current_stack = self.get_viewpoint_frame(fid)
         self._current_fid = fid
 
+    def refresh_current_stack_dual(self):
+        for stack_id in self._current_stack_dual:
+            self._current_stack_dual[stack_id] = self.get_viewpoint_frame(stack_id)
+
     @property
     def viewpoint_cam(self, load2device: bool = False):
         if not self._current_stack:
@@ -41,3 +46,23 @@ class ViewpointLoader:
 
         cam = self._current_stack.pop(randint(0, len(self._current_stack) - 1))
         return cam if not load2device else cam.load2device()
+
+    @property
+    def viewpoint_cam_dual(self, load2device: bool = False):
+        if not self._current_stack_dual[1]:
+            self._current_stack_dual[1] = self.get_viewpoint_frame(1)
+        cam_1 = self._current_stack_dual[1].pop(
+            randint(0, len(self._current_stack_dual[1]) - 1)
+        )
+
+        if not self._current_stack_dual[2]:
+            self._current_stack_dual[2] = self.get_viewpoint_frame(2)
+        cam_2 = self._current_stack_dual[2].pop(
+            randint(0, len(self._current_stack_dual[2]) - 1)
+        )
+
+        return (
+            (cam_1, cam_2)
+            if not load2device
+            else (cam_1.load2device(), cam_2.load2device())
+        )

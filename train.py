@@ -67,34 +67,29 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     )
 
     # load gaussians
-    with open("./load_data/end_frame_params.pkl", "rb") as f:
-        data = pickle.load(f)
-    # with open("./end_frame_params.pkl", "rb") as f:
+    # with open("./load_data/end_frame_params.pkl", "rb") as f:
     #     data = pickle.load(f)
-    gaussians = data["gaussians"]
-    factors = data["factors"]
+    with open("./end_frame_gaussians.pkl", "rb") as f:
+        gaussians = pickle.load(f)
+    # gaussians = data["gaussians"]
+    # factors = data["factors"]
 
     mask = None
-    for iteration in range(opt.pretrain, opt.continue_optimize_arti + 1):
+    start = opt.only_train_single_frame
+    end = opt.pretrain
+    for iteration in range(start, end + 1):
         iter_start.record()
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
 
-        # if iteration == 2000:
-        #     import dill as pickle
-
-        #     with open("first_frame_gaussian.pkl", "wb") as f:
-        #         pickle.dump(gaussians, f)
-        #         exit()
-
-        if iteration == opt.continue_optimize_arti:
+        if iteration == end:
             scene.save(iteration)
-            mask, centers = build_mask(factors.detach().cpu().numpy())
-            mask = torch.tensor(
-                mask, device="cuda", dtype=torch.float32, requires_grad=False
-            )
+            # mask, centers = build_mask(factors.detach().cpu().numpy())
+            # mask = torch.tensor(
+            #     mask, device="cuda", dtype=torch.float32, requires_grad=False
+            # )
             # deform.save_weights(args.model_path, iteration)
             print(f"predicted articulated params:")
             print(
@@ -108,16 +103,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 # move_parts = mask.sum()
                 # print(f"move parts: {move_parts}, factors: {mask.shape[0]}")
 
-                render_results(
-                    viewpoint_loader.get_viewpoint_frame(fid=0),
-                    gaussians,
-                    deform,
-                    revolute,
-                    mask,
-                    pipe,
-                    background,
-                    type="gif",
-                )
+                # render_results(
+                #     viewpoint_loader.get_viewpoint_frame(fid=0),
+                #     gaussians,
+                #     deform,
+                #     revolute,
+                #     mask,
+                #     pipe,
+                #     background,
+                #     type="gif",
+                # )
 
                 render_results(
                     viewpoint_loader.get_viewpoint_frame(fid=0),
