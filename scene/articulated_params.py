@@ -12,7 +12,7 @@ class Revolute:
             device="cuda",
         )
         self._pivot = torch.tensor(
-            [0.0, 0.0, 0.0],
+            [0.7293, 0.17508, -0.151794],
             dtype=torch.float32,
             requires_grad=True,
             device="cuda",

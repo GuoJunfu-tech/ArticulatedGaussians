@@ -118,7 +118,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 #     type="gif",
                 # )
 
-                render_results(
+                _, _, factors = render_results(
                     viewpoint_loader.get_viewpoint_frame(fid=0),
                     gaussians,
                     deform,
@@ -129,13 +129,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     type="img",
                 )
 
-            # data = {
-            #     "gaussians": gaussians,
-            #     "xyz": gaussians.get_xyz,
-            #     "factors": factors,
-            # }
-            # with open("end_frame_params.pkl", "wb") as f:
-            #     pickle.dump(data, f)
+            data = {
+                "gaussians": gaussians,
+                "factors": factors,
+            }
+            with open("pretrain_params.pkl", "wb") as f:
+                pickle.dump(data, f)
 
             exit()
 
@@ -309,15 +308,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 deform.optimizer.zero_grad()
                 deform.update_learning_rate(iteration)
 
-            if opt.only_train_single_frame < iteration < opt.continue_optimize_arti:
-                revolute.axis_pivot_optimizer.step()
-                revolute.axis_pivot_optimizer.zero_grad()
-                revolute.axis_pivot_scheduler.step()
+            # if opt.only_train_single_frame < iteration < opt.continue_optimize_arti:
+            #     revolute.axis_pivot_optimizer.step()
+            #     revolute.axis_pivot_optimizer.zero_grad()
+            #     revolute.axis_pivot_scheduler.step()
 
-            if opt.pretrain < iteration < opt.continue_optimize_arti:
-                revolute.theta_optimizer.step()
-                revolute.theta_optimizer.zero_grad()
-                revolute.theta_scheduler.step()
+            # if opt.pretrain < iteration < opt.continue_optimize_arti:
+            #     revolute.theta_optimizer.step()
+            #     revolute.theta_optimizer.zero_grad()
+            #     revolute.theta_scheduler.step()
 
     print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
 

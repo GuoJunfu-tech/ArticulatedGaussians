@@ -11,3 +11,4 @@ data
 submodules
 rendered_img
 *.pkl
+load_data

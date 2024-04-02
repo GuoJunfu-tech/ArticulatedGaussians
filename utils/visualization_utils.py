@@ -101,4 +101,6 @@ def render_results(
             else:
                 raise ValueError("Type not found")
 
+            return new_xyz, new_rotations, factors
+
         # img.save(f"./rendered_img/{id}.png", format="PNG")

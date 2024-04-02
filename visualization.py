@@ -110,7 +110,7 @@ def get_images(
 
 
 if __name__ == "__main__":
-    with open("./load_data/end_frame_params.pkl", "rb") as f:
+    with open("./load_data/pretrain_params.pkl", "rb") as f:
         data = pickle.load(f)
 
     gaussians = data["gaussians"]
