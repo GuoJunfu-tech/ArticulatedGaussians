@@ -19,7 +19,9 @@ import torch
 from tqdm import tqdm
 import uuid
 
-from utils.loss_utils import l1_loss, ssim, kl_divergence, chamfer_distance_loss
+from utils.loss_utils import (
+    ll1_ssim_loss,
+)
 from gaussian_renderer import render, network_gui
 from scene import Scene, GaussianModel, DeformModel, Revolute
 from utils.general_utils import safe_state, get_linear_noise_func
@@ -56,7 +58,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     iter_end = torch.cuda.Event(enable_timing=True)
 
     viewpoint_loader = ViewpointLoader(scene)
-    viewpoint_loader.refresh_current_stack(fid=1)
+    # viewpoint_loader.refresh_current_stack(fid=1)
+    # viewpoint_loader.refresh_current_stack_dual()
 
     ema_loss_for_log = 0.0
     best_psnr = 0.0
@@ -69,13 +72,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     # load gaussians
     # with open("./load_data/end_frame_params.pkl", "rb") as f:
     #     data = pickle.load(f)
-    with open("./end_frame_gaussians.pkl", "rb") as f:
-        gaussians = pickle.load(f)
+    # with open("./load_data/end_frame_gaussian.pkl", "rb") as f:
+    #     gaussians = pickle.load(f)
     # gaussians = data["gaussians"]
     # factors = data["factors"]
 
     mask = None
-    start = opt.only_train_single_frame
+    # start = opt.only_train_single_frame
+    start = 1
     end = opt.pretrain
     for iteration in range(start, end + 1):
         iter_start.record()
@@ -136,69 +140,101 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             exit()
 
         if iteration < opt.only_train_single_frame:
-            viewpoint_cam = viewpoint_loader.viewpoint_cam
+            viewpoint_cam_start = viewpoint_loader.get_viewpoint_cam(
+                fid=1, load2device=dataset.load2gpu_on_the_fly
+            )
 
             new_xyz, new_rotations = None, None
 
         if opt.only_train_single_frame == iteration:
             print("[Training]::step 1 is over, now training deformation net")
-            viewpoint_loader.refresh_current_stack(fid=0)
             continue
 
         if opt.pretrain == iteration:
+            exit()
+            # TODO to be implemented
             print(f"[Training]::pretrain finished after {iteration} steps")
-            viewpoint_loader.refresh_current_stack(fid=0)
             mask, centers = build_mask(factors.detach().cpu().numpy())
             mask = torch.tensor(
                 mask, device="cuda", dtype=torch.float32, requires_grad=False
             )
             revolute.set_theta(120 / 180 * math.pi)  # TODO delete
             # revolute.set_up_theta(centers[1].item())
-        if opt.only_train_single_frame + 1 <= iteration <= opt.continue_optimize_arti:
-            viewpoint_cam = viewpoint_loader.viewpoint_cam
-            # print(viewpoint_loader._current_fid)
-            # deformation
-            new_xyz, new_rotations, factor = deform.step(
-                gaussians,
-                revolute,
-                mask,
-            )
+            # if opt.only_train_single_frame + 1 <= iteration <= opt.continue_optimize_arti:
+
+        if opt.only_train_single_frame < iteration <= opt.pretrain:
+            viewpoint_cam_end, viewpoint_cam_start = (
+                viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
+            )  # FIXME we use cam_end as theta=0, turn it back
+
+        # print(viewpoint_loader._current_fid)
+        # deformation
+        new_xyz, new_rotations, factor = deform.step(
+            gaussians,
+            revolute,
+            mask,
+        )
 
         d_scaling = 0.0  # TODO delete all d_scaling
         # Render
+        # deform frame
+
         render_pkg_re = render(
-            viewpoint_cam,
+            viewpoint_cam_start,
             gaussians,
             pipe,
             background,
-            new_xyz,
-            new_rotations,
-            d_scaling,
-            dataset.is_6dof,
+            gaussians.get_xyz,
+            gaussians.get_rotation,
         )
-        image, viewspace_point_tensor, visibility_filter, radii = (
+
+        (
+            image_start,
+            viewspace_point_tensor_start,
+            visibility_filter_start,
+            radii_start,
+        ) = (
             render_pkg_re["render"],
             render_pkg_re["viewspace_points"],
             render_pkg_re["visibility_filter"],
             render_pkg_re["radii"],
         )
-        # depth = render_pkg_re["depth"]
+        gt_image_start = viewpoint_cam_start.original_image.cuda()
+        loss_start = ll1_ssim_loss(image_start, gt_image_start, opt.lambda_dssim)
+        if dataset.load2gpu_on_the_fly:
+            viewpoint_cam_start.load2device("cpu")
+
+        loss_end = 0.0
+        if opt.only_train_single_frame < iteration < opt.pretrain:
+            render_pkg_re = render(
+                viewpoint_cam_end,
+                gaussians,
+                pipe,
+                background,
+                new_xyz,
+                new_rotations,
+                d_scaling,
+                dataset.is_6dof,
+            )
+            image_end, viewspace_point_tensor_end, visibility_filter_end, radii_end = (
+                render_pkg_re["render"],
+                render_pkg_re["viewspace_points"],
+                render_pkg_re["visibility_filter"],
+                render_pkg_re["radii"],
+            )
+            gt_image_end = viewpoint_cam_end.original_image.cuda()
+            loss_end = ll1_ssim_loss(image_end, gt_image_end, opt.lambda_dssim)
 
         # Loss
-        gt_image = viewpoint_cam.original_image.cuda()
-        Ll1 = l1_loss(image, gt_image)
-        # sp_loss = torch.sum(-1 * (factor - 0.5) ** 2)
 
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (
-            1.0 - ssim(image, gt_image)  # + sp_loss * 1e-5
-        )
+        loss = loss_end + loss_start
 
         loss.backward()
 
         iter_end.record()
 
         if dataset.load2gpu_on_the_fly:
-            viewpoint_cam.load2device("cpu")
+            viewpoint_cam_end.load2device("cpu")
 
         with torch.no_grad():
             # Progress bar
@@ -206,16 +242,31 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             if iteration % 10 == 0:
                 sp_loss = 0
                 progress_bar.set_postfix(
-                    {"Loss": f"{ema_loss_for_log:.{7}f}", "sp_loss": f"{sp_loss:.{7}f}"}
+                    {
+                        "Loss_total": f"{ema_loss_for_log:.{7}f}",
+                        "move_loss": f"{loss_end:.{7}f}",
+                        "unmove_loss": f"{loss_start:.{7}f}",
+                    }
                 )
                 progress_bar.update(10)
             if iteration == opt.iterations:
                 progress_bar.close()
 
             # Keep track of max radii in image-space for pruning
-            gaussians.max_radii2D[visibility_filter] = torch.max(
-                gaussians.max_radii2D[visibility_filter], radii[visibility_filter]
+            if opt.only_train_single_frame < iteration < opt.pretrain:
+                gaussians.max_radii2D[visibility_filter_end] = torch.max(
+                    gaussians.max_radii2D[visibility_filter_end],
+                    radii_end[visibility_filter_end],
+                )
+                gaussians.add_densification_stats(
+                    viewspace_point_tensor_end, visibility_filter_end
+                )
+
+            gaussians.max_radii2D[visibility_filter_start] = torch.max(
+                gaussians.max_radii2D[visibility_filter_start],
+                radii_start[visibility_filter_start],
             )
+            # FIXME sick code! should update together!!
 
             # if iteration in saving_iterations:
             #     print("\n[ITER {}] Saving Gaussians".format(iteration))
@@ -223,10 +274,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             #     deform.save_weights(args.model_path, iteration)
 
             # Optimizer step
-            if iteration < opt.only_train_single_frame:  # TODO temporary used
+            if iteration < opt.pretrain:  # TODO temporary used
                 # Densification
+
                 gaussians.add_densification_stats(
-                    viewspace_point_tensor, visibility_filter
+                    viewspace_point_tensor_start, visibility_filter_start
                 )
 
                 if (
@@ -247,6 +299,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     dataset.white_background and iteration == opt.densify_from_iter
                 ):
                     gaussians.reset_opacity()
+
                 gaussians.optimizer.step()
                 gaussians.update_learning_rate(iteration)
                 gaussians.optimizer.zero_grad(set_to_none=True)

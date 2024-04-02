@@ -18,9 +18,15 @@ def render_results(
 ):
     with torch.no_grad():
         for id, cam in enumerate(viewpoint_cams):
-            if id == 4:
-                exit()
-            theta = revoluteParams.theta.detach().cpu().float()
+            # if id == 4:
+            #     exit()
+
+            theta = (
+                revoluteParams.theta.detach().cpu().float()
+                if revoluteParams.theta
+                else None
+            )
+
             if type == "gif":
                 k = 20
                 interval = theta / 20
@@ -62,7 +68,7 @@ def render_results(
                     loop=0,
                 )
             elif type == "img":
-                revoluteParams.set_theta(theta)
+                # revoluteParams.set_theta(theta)
                 save_path = os.path.join(os.getcwd(), f"rendered_img/static_{id}.png")
                 new_xyz, new_rotations, factors = deformModel.deform(
                     gaussians.get_xyz,

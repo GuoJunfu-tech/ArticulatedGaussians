@@ -1,4 +1,4 @@
-from random import randint
+from random import randint, choice
 
 
 class ViewpointLoader:
@@ -6,9 +6,13 @@ class ViewpointLoader:
         self._scene = scene
         self._full_viewpoint = self._scene.getTrainCameras().copy()
         self._viewpoint_frames = {}
-        self._current_stack = None
-        self._current_fid = None
+        self._load_frame_viewpoint()
+        # self._current_stack = None
+        # self._current_fid = None
+
         self._current_stack_dual = {}
+        for stack_id in self._viewpoint_frames:
+            self._current_stack_dual[stack_id] = self.get_viewpoint_frame(stack_id)
 
     def _load_frame_viewpoint(self):
         for viewpoint_cam in self._full_viewpoint:
@@ -17,52 +21,27 @@ class ViewpointLoader:
                 self._viewpoint_frames[fid] = []
             self._viewpoint_frames[fid].append(viewpoint_cam)
 
+    def _ensure_frame_loaded(self, fid):
+        if not self._current_stack_dual[fid]:
+            self._current_stack_dual[fid] = self.get_viewpoint_frame(fid)
+
+    def _get_random_cam_from_stack(self, fid: int, load2device: bool = False):
+        self._ensure_frame_loaded(fid)
+        cam = choice(self._current_stack_dual[fid])
+        self._current_stack_dual[fid].remove(cam)
+        return cam.load2device() if load2device else cam
+
     def get_viewpoint_frame(self, fid: int):
         if not self._viewpoint_frames:
             self._load_frame_viewpoint()
 
         return self._viewpoint_frames[fid].copy()
 
-    @property
-    def current_stack(self):
-        return self._current_stack
+    def get_viewpoint_cam(self, fid, load2device=False):
+        self._ensure_frame_loaded(fid)
+        return self._get_random_cam_from_stack(fid, load2device)
 
-    def refresh_current_stack(self, fid=None):
-        if fid is None:
-            self._current_stack = self._full_viewpoint
-            return
-
-        self._current_stack = self.get_viewpoint_frame(fid)
-        self._current_fid = fid
-
-    def refresh_current_stack_dual(self):
-        for stack_id in self._current_stack_dual:
-            self._current_stack_dual[stack_id] = self.get_viewpoint_frame(stack_id)
-
-    @property
-    def viewpoint_cam(self, load2device: bool = False):
-        if not self._current_stack:
-            self.refresh_current_stack(self._current_fid)
-
-        cam = self._current_stack.pop(randint(0, len(self._current_stack) - 1))
-        return cam if not load2device else cam.load2device()
-
-    @property
-    def viewpoint_cam_dual(self, load2device: bool = False):
-        if not self._current_stack_dual[1]:
-            self._current_stack_dual[1] = self.get_viewpoint_frame(1)
-        cam_1 = self._current_stack_dual[1].pop(
-            randint(0, len(self._current_stack_dual[1]) - 1)
-        )
-
-        if not self._current_stack_dual[2]:
-            self._current_stack_dual[2] = self.get_viewpoint_frame(2)
-        cam_2 = self._current_stack_dual[2].pop(
-            randint(0, len(self._current_stack_dual[2]) - 1)
-        )
-
-        return (
-            (cam_1, cam_2)
-            if not load2device
-            else (cam_1.load2device(), cam_2.load2device())
-        )
+    def get_viewpoint_cam_dual(self, load2device=False):
+        cam_0 = self._get_random_cam_from_stack(0, load2device)
+        cam_1 = self._get_random_cam_from_stack(1, load2device)
+        return cam_0, cam_1
