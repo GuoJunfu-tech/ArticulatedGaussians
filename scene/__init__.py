@@ -1,5 +1,3 @@
-#
-# Copyright (C) 2023, Inria
 # GRAPHDECO research group, https://team.inria.fr/graphdeco
 # All rights reserved.
 #
@@ -33,6 +31,7 @@ class Scene:
         load_iteration=None,
         shuffle=True,
         resolution_scales=[1.0],
+        status=None,
     ):
         """b
         :param path: Path to colmap scene main folder.
@@ -79,14 +78,16 @@ class Scene:
             print("Found calibration_full.json, assuming Dynamic-360 data set!")
             scene_info = sceneLoadTypeCallbacks["dynamic360"](args.source_path)
         elif os.path.exists(
-            os.path.join(args.source_path, "articulated_transforms.json")
+            os.path.join(args.source_path, "articulated_transforms_train.json")
         ):
             print(
-                "Found articulated_transforms.json, assuming articulated_blender data set!"
+                "Found articulated_transforms_train.json, assuming articulated sapien data set!"
             )
-            scene_info = sceneLoadTypeCallbacks["articulated"](args.source_path)
+            scene_info = sceneLoadTypeCallbacks["articulated"](
+                args.source_path, arges.while_background, args.eval, status
+            )
         else:
-            assert False, "Could not recognize scene type!"
+            raise ValueError("Could not recognize scene type!")
 
         if not self.loaded_iter:
             with open(scene_info.ply_path, "rb") as src_file, open(

@@ -48,7 +48,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
     revolute = Revolute()
 
-    scene = Scene(dataset, gaussians)
+    scene_start = Scene(dataset, gaussians, "start")
+    scene_end = Scene(dataset, gaussians, "end")
+
     gaussians.training_setup(opt)
 
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
@@ -152,11 +154,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         if opt.pretrain == iteration:
             print(f"[Training]::pretrain finished after {iteration} steps")
             with torch.no_grad():
-                _, _, factors = deform.step(
-                    gaussians,
-                    revolute,
-                    mask,
-                )
+                pass
+                # _, _, factors = deform.step(
+                #     gaussians,
+                #     revolute,
+                #     mask,
+                # )
             mask, centers = build_mask(factors.detach().cpu().numpy())
             mask = torch.tensor(
                 mask, device="cuda", dtype=torch.float32, requires_grad=False
@@ -178,7 +181,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
         # print(viewpoint_loader._current_fid)
         # deformation
-        new_xyz, new_rotations, factor = deform.step(
+        new_xyz, new_rotations, factors = deform.step(
             gaussians,
             revolute,
             mask,

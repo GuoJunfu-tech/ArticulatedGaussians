@@ -132,9 +132,7 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
             FovY = focal2fov(focal_length_y, height)
             FovX = focal2fov(focal_length_x, width)
         else:
-            assert (
-                False
-            ), "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
+            assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
         image_path = os.path.join(images_folder, os.path.basename(extr.name))
         image_name = os.path.basename(image_path).split(".")[0]
@@ -250,6 +248,70 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
     return scene_info
 
 
+def readCamerasFromArticulatedTransforms(
+    path, transformsfile, white_background, status="start", extension=".png"
+):
+    cam_infos = []
+
+    with open(os.path.join(path, transformsfile)) as json_file:
+        contents = json.load(json_file)
+        if status == "start":
+            frame_time = 0
+        elif status == "end":
+            frame_time = 1
+        else:
+            raise ValueError("[ERROR]::Wrong status in dataset_readers")
+
+        K = None
+        for key, raw_matrix in contents.items():
+            if key == "K":
+                K = matrix
+                continue
+
+            cam_name = os.path.join(path, status, key + extension)
+            matrix = np.linalg.inv(np.array(raw_matrix))
+            R = -np.transpose(matrix[:3, :3])
+            R[:, 0] = -R[:, 0]
+            T = -matrix[:3, 3]
+
+            image_path = os.path.join(path, cam_name)
+            image_name = Path(cam_name).stem
+            image = Image.open(image_path)
+            im_data = np.array(image.convert("RGBA"))
+            bg = np.array([1, 1, 1]) if white_background else np.array([0, 0, 0])
+            norm_data = im_data / 255.0
+            mask = norm_data[..., 3:4]
+            arr = norm_data[:, :, :3] * norm_data[:, :, 3:4] + bg * (
+                1 - norm_data[:, :, 3:4]
+            )
+            image = Image.fromarray(np.array(arr * 255.0, dtype=np.byte), "RGB")
+
+            fovx = focal2fov(K[0, 0], image.size[0])
+            fovy = focal2fov(K[1, 1], image.size[1])
+            # fovy = focal2fov(fov2focal(fovx, image.size[0]), image.size[1])
+
+            FovY = fovx  # FIXME: strange operation
+            FovX = fovy
+
+            cam_infos.append(
+                CameraInfo(
+                    uid=idx,
+                    R=R,
+                    T=T,
+                    FovY=FovY,
+                    FovX=FovX,
+                    image=image,
+                    image_path=image_path,
+                    image_name=image_name,
+                    width=image.size[0],
+                    height=image.size[1],
+                    fid=frame_time,
+                )
+            )
+
+    return cam_infos
+
+
 def readCamerasFromTransforms(path, transformsfile, white_background, extension=".png"):
     cam_infos = []
 
@@ -306,14 +368,16 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
     return cam_infos
 
 
-def readArticulatedSyntheticInfo(path, white_background, eval, extension=".png"):
+def readArticulatedSyntheticInfo(
+    path, white_background, eval, status=None, extension=".png"
+):
     """modified from readNerfSyntheticInfo function
     Details:
     only two frames input: begin & end, output camera views for each frame.
     """
     print("Reading Training Transforms")
-    train_cam_infos = readCamerasFromTransforms(
-        path, "transforms_train.json", white_background, extension
+    train_cam_infos = readCamerasFromArticulatedTransforms(
+        path, "transforms_train.json", white_background, status, extension
     )
     print("Reading Test Transforms")
 
@@ -741,4 +805,5 @@ sceneLoadTypeCallbacks = {
     "DTU": readNeuSDTUInfo,  # DTU dataset used in Tensor4D [https://github.com/DSaurus/Tensor4D]
     "nerfies": readNerfiesInfo,  # NeRFies & HyperNeRF dataset proposed by [https://github.com/google/hypernerf/releases/tag/v0.1]
     "plenopticVideo": readPlenopticVideoDataset,  # Neural 3D dataset in [https://github.com/facebookresearch/Neural_3D_Video]
+    "articulated": readArticulatedSyntheticInfo,  # Articulated dataset [https://aspis.cmpt.sfu.ca/projects/paris/dataset.zip]
 }

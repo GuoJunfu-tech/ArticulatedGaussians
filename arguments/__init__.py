@@ -106,7 +106,7 @@ class OptimizationParams(ParamGroup):
 
         self.only_train_single_frame = 4_000
         self.pretrain = 9_600
-        self.continue_optimize_arti = 9_900
+        self.continue_optimize_arti = 10_900
         self.only_train_end_frame_gaussian = 48_000
         super().__init__(parser, "Optimization Parameters")
 
