@@ -110,14 +110,15 @@ def get_images(
 
 
 if __name__ == "__main__":
-    with open("./load_data/pretrain_params.pkl", "rb") as f:
+    with open("./load_data/all_pretrain_params.pkl", "rb") as f:
         data = pickle.load(f)
 
     gaussians = data["gaussians"]
     factors = data["factors"]
 
-    visualize(gaussians.get_xyz, data["factors"])
-    draw_graph(data["xyz"], data["factors"])
+    xyz = gaussians.get_xyz
+    visualize(xyz, data["factors"])
+    draw_graph(xyz, data["factors"])
     exit()
 
     parser = ArgumentParser(description="Training script parameters")

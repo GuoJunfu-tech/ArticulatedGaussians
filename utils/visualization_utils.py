@@ -17,9 +17,9 @@ def render_results(
     type="gif",
 ):
     with torch.no_grad():
-        for id, cam in enumerate(viewpoint_cams):
-            # if id == 4:
-            #     exit()
+        for cid, cam in enumerate(viewpoint_cams):
+            if cid == 5:
+                exit()
 
             theta = (
                 revoluteParams.theta.detach().cpu().float()
@@ -55,7 +55,7 @@ def render_results(
                     img = Image.fromarray(np.uint8(image_np * 255), "RGB")
                     images.append(img)
 
-                save_path = os.path.join(os.getcwd(), f"rendered_img/dynamic_{id}.gif")
+                save_path = os.path.join(os.getcwd(), f"rendered_img/dynamic_{cid}.gif")
                 # if not os.path.exists(save_path):
                 #     raise ValueError(f"Could not find path {save_path}")
                 print(f"saving results {save_path}")
@@ -69,7 +69,7 @@ def render_results(
                 )
             elif type == "img":
                 # revoluteParams.set_theta(theta)
-                save_path = os.path.join(os.getcwd(), f"rendered_img/static_{id}.png")
+                save_path = os.path.join(os.getcwd(), f"rendered_img/static_{cid}.png")
                 new_xyz, new_rotations, factors = deformModel.deform(
                     gaussians.get_xyz,
                     gaussians.get_rotation,
@@ -101,6 +101,6 @@ def render_results(
             else:
                 raise ValueError("Type not found")
 
-            return new_xyz, new_rotations, factors
+        return new_xyz, new_rotations, factors
 
         # img.save(f"./rendered_img/{id}.png", format="PNG")

@@ -72,15 +72,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     # load gaussians
     # with open("./load_data/end_frame_params.pkl", "rb") as f:
     #     data = pickle.load(f)
-    # with open("./load_data/end_frame_gaussian.pkl", "rb") as f:
-    #     gaussians = pickle.load(f)
-    # gaussians = data["gaussians"]
-    # factors = data["factors"]
+    with open("./load_data/all_pretrain_params.pkl", "rb") as f:
+        data = pickle.load(f)
+    gaussians = data["gaussians"]
+    factors = data["factors"]
 
     mask = None
     # start = opt.only_train_single_frame
-    start = 1
-    end = opt.pretrain
+    start = opt.pretrain
+    end = opt.continue_optimize_arti
     for iteration in range(start, end + 1):
         iter_start.record()
 
@@ -107,18 +107,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 # move_parts = mask.sum()
                 # print(f"move parts: {move_parts}, factors: {mask.shape[0]}")
 
-                # render_results(
-                #     viewpoint_loader.get_viewpoint_frame(fid=0),
-                #     gaussians,
-                #     deform,
-                #     revolute,
-                #     mask,
-                #     pipe,
-                #     background,
-                #     type="gif",
-                # )
-
-                _, _, factors = render_results(
+                render_results(
                     viewpoint_loader.get_viewpoint_frame(fid=0),
                     gaussians,
                     deform,
@@ -126,15 +115,26 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     mask,
                     pipe,
                     background,
-                    type="img",
+                    type="gif",
                 )
 
-            data = {
-                "gaussians": gaussians,
-                "factors": factors,
-            }
-            with open("pretrain_params.pkl", "wb") as f:
-                pickle.dump(data, f)
+                # _, _, factors = render_results(
+                #     viewpoint_loader.get_viewpoint_frame(fid=0),
+                #     gaussians,
+                #     deform,
+                #     revolute,
+                #     mask,
+                #     pipe,
+                #     background,
+                #     type="img",
+                # )
+
+            # data = {
+            #     "gaussians": gaussians,
+            #     "factors": factors,
+            # }
+            # with open("all_pretrain_params.pkl", "wb") as f:
+            #     pickle.dump(data, f)
 
             exit()
 
@@ -150,18 +150,28 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             continue
 
         if opt.pretrain == iteration:
-            exit()
-            # TODO to be implemented
             print(f"[Training]::pretrain finished after {iteration} steps")
+            with torch.no_grad():
+                _, _, factors = deform.step(
+                    gaussians,
+                    revolute,
+                    mask,
+                )
             mask, centers = build_mask(factors.detach().cpu().numpy())
             mask = torch.tensor(
                 mask, device="cuda", dtype=torch.float32, requires_grad=False
             )
             revolute.set_theta(120 / 180 * math.pi)  # TODO delete
-            # revolute.set_up_theta(centers[1].item())
+            # revolute.set_theta(centers[1].item())
+            revolute.reset_param_optimizer()
+            print(f"predicted articulated params:")
+            print(
+                f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
+            )
+
             # if opt.only_train_single_frame + 1 <= iteration <= opt.continue_optimize_arti:
 
-        if opt.only_train_single_frame < iteration <= opt.pretrain:
+        if opt.only_train_single_frame < iteration <= opt.continue_optimize_arti:
             viewpoint_cam_end, viewpoint_cam_start = (
                 viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
             )  # FIXME we use cam_end as theta=0, turn it back
@@ -204,7 +214,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             viewpoint_cam_start.load2device("cpu")
 
         loss_end = 0.0
-        if opt.only_train_single_frame < iteration < opt.pretrain:
+        if opt.only_train_single_frame < iteration < opt.continue_optimize_arti:
             render_pkg_re = render(
                 viewpoint_cam_end,
                 gaussians,
@@ -308,15 +318,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 deform.optimizer.zero_grad()
                 deform.update_learning_rate(iteration)
 
-            # if opt.only_train_single_frame < iteration < opt.continue_optimize_arti:
-            #     revolute.axis_pivot_optimizer.step()
-            #     revolute.axis_pivot_optimizer.zero_grad()
-            #     revolute.axis_pivot_scheduler.step()
+            if opt.only_train_single_frame < iteration < opt.continue_optimize_arti:
+                revolute.axis_pivot_optimizer.step()
+                revolute.axis_pivot_optimizer.zero_grad()
+                revolute.axis_pivot_scheduler.step()
 
-            # if opt.pretrain < iteration < opt.continue_optimize_arti:
-            #     revolute.theta_optimizer.step()
-            #     revolute.theta_optimizer.zero_grad()
-            #     revolute.theta_scheduler.step()
+            if opt.pretrain < iteration < opt.continue_optimize_arti:
+                revolute.theta_optimizer.step()
+                revolute.theta_optimizer.zero_grad()
+                revolute.theta_scheduler.step()
 
     print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
 
