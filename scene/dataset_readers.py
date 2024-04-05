@@ -263,12 +263,12 @@ def readCamerasFromArticulatedTransforms(
             raise ValueError("[ERROR]::Wrong status in dataset_readers")
 
         K = None
-        for key, raw_matrix in contents.items():
+        for idx, (key, raw_matrix) in enumerate(contents.items()):
             if key == "K":
-                K = matrix
+                K = raw_matrix
                 continue
 
-            cam_name = os.path.join(path, status, key + extension)
+            cam_name = os.path.join(path, "train", key + extension)
             matrix = np.linalg.inv(np.array(raw_matrix))
             R = -np.transpose(matrix[:3, :3])
             R[:, 0] = -R[:, 0]
@@ -286,8 +286,8 @@ def readCamerasFromArticulatedTransforms(
             )
             image = Image.fromarray(np.array(arr * 255.0, dtype=np.byte), "RGB")
 
-            fovx = focal2fov(K[0, 0], image.size[0])
-            fovy = focal2fov(K[1, 1], image.size[1])
+            fovx = focal2fov(K[0][0], image.size[0])
+            fovy = focal2fov(K[1][1], image.size[1])
             # fovy = focal2fov(fov2focal(fovx, image.size[0]), image.size[1])
 
             FovY = fovx  # FIXME: strange operation
@@ -377,7 +377,7 @@ def readArticulatedSyntheticInfo(
     """
     print("Reading Training Transforms")
     train_cam_infos = readCamerasFromArticulatedTransforms(
-        path, "transforms_train.json", white_background, status, extension
+        path, "camera_train.json", white_background, status, extension
     )
     print("Reading Test Transforms")
 

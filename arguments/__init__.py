@@ -104,9 +104,9 @@ class OptimizationParams(ParamGroup):
         self.densify_until_iter = 15_000
         self.densify_grad_threshold = 0.0002
 
-        self.only_train_single_frame = 4_000
-        self.pretrain = 9_600
-        self.continue_optimize_arti = 10_900
+        self.only_train_single_frame = 6_500
+        self.pretrain = 26_600
+        self.continue_optimize_arti = 35_900
         self.only_train_end_frame_gaussian = 48_000
         super().__init__(parser, "Optimization Parameters")
 

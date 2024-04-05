@@ -115,6 +115,8 @@ def gmm(X, k, inti_centroid=None, max_iters=100):
 
 
 def build_mask(factors, method="gmm", max_iters=20):
+    factors = abs(factors)
+    w = (factors - factors.min()) / (factors.max() - factors.min())
     if method == "gmm":
         print(f"Using classification method GMM")
         classify = gmm
@@ -124,7 +126,7 @@ def build_mask(factors, method="gmm", max_iters=20):
     else:
         raise ValueError("Method not found")
 
-    labels, probs, centers = classify(factors, k=2, max_iters=max_iters)
+    labels, probs, centers = classify(w, k=2, max_iters=max_iters)
 
     # make sure that 0 represents the unmovable parts
     if abs(centers[0]) > abs(centers[1]):

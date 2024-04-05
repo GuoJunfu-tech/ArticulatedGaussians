@@ -5,11 +5,13 @@ from arguments import ModelParams, PipelineParams, OptimizationParams
 import numpy as np
 import sys
 import math
+import copy
 from argparse import ArgumentParser, Namespace
 from gaussian_renderer import render, network_gui
 from utils.loss_utils import l1_loss, ssim, chamfer_distance_loss
 from utils.general_utils import farthest_point_sampling
 from utils.classification_utils import kmeans, gmm
+from utils.classification_utils import build_mask
 
 
 def value_to_color(value):
@@ -58,25 +60,43 @@ def visualize(xyz, factor=None):
     else:
         factor = abs(factor.detach().cpu().numpy())
 
-    w = (factor - factor.min()) / (1e-10 + factor.max() - factor.min())
+    w = (factor - factor.min()) / (factor.max() - factor.min())
 
     id_max, id_min = np.argmax(abs(w)), np.argmin(abs(w))
 
     # X = np.hstack([xyz, w * 2])
-    X = w
-    # init_center = np.array([X[id_max], X[id_min]])
-    # _, clusters = kmeans(X, 2, init_center, 30)
-    clusters, _, _ = gmm(X, 2)
+    # X_soft = w.reshape((-1, 1))
+    # # init_center = np.array([X[id_max], X[id_min]])
+    # # _, clusters = kmeans(X, 2, init_center, 30)
+    # labels, _, centers = gmm(X_soft, 2)
+    # if abs(centers[0]) > abs(centers[1]):
+    #     mask = np.ones_like(labels) - labels
+    #     centers = centers[-2:]
+    # else:
+    #     mask = labels
+    mask, centers = build_mask(w, "gmm")
 
     colors = np.zeros((xyz.shape[0], 3))
-    for cluster_id, cluster in enumerate(clusters):
+    for cluster_id, cluster in enumerate(mask):
         colors[cluster_id, :] = [1, 0, 0] * cluster + [0, 0, 1] * (1 - cluster)
 
+    pcd.colors = o3d.utility.Vector3dVector(colors)
     # colors = (w < 5e-2) * [1, 0, 0] + (w >= 5e-2) * [0, 0, 1]
 
-    pcd.colors = o3d.utility.Vector3dVector(colors)
+    pcd_hard = o3d.geometry.PointCloud()
 
-    o3d.visualization.draw_geometries([pcd])
+    X_hard = copy.deepcopy(w)
+    mask = X_hard > 1e-2
+    colors = np.zeros((xyz.shape[0], 3))
+    for cluster_id, cluster in enumerate(mask):
+        colors[cluster_id, :] = [1, 0, 0] * cluster + [0, 0, 1] * (1 - cluster)
+
+    pcd_hard.colors = o3d.utility.Vector3dVector(colors)
+    xyz_hard = xyz.copy()
+    xyz_hard[:, 0] += 1.0
+    pcd_hard.points = o3d.utility.Vector3dVector(xyz_hard)
+
+    o3d.visualization.draw_geometries([pcd, pcd_hard])
 
 
 def get_images(
@@ -110,7 +130,8 @@ def get_images(
 
 
 if __name__ == "__main__":
-    with open("./load_data/all_pretrain_params.pkl", "rb") as f:
+    with open("./all_pretrain_params.pkl", "rb") as f:
+        # with open("./final_params.pkl", "rb") as f:
         data = pickle.load(f)
 
     gaussians = data["gaussians"]

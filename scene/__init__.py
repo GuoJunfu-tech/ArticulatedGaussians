@@ -28,12 +28,12 @@ class Scene:
         self,
         args: ModelParams,
         gaussians: GaussianModel,
+        status=None,
         load_iteration=None,
         shuffle=True,
         resolution_scales=[1.0],
-        status=None,
     ):
-        """b
+        """
         :param path: Path to colmap scene main folder.
         """
         self.model_path = args.model_path
@@ -78,13 +78,14 @@ class Scene:
             print("Found calibration_full.json, assuming Dynamic-360 data set!")
             scene_info = sceneLoadTypeCallbacks["dynamic360"](args.source_path)
         elif os.path.exists(
-            os.path.join(args.source_path, "articulated_transforms_train.json")
+            os.path.join(args.source_path, status, "camera_train.json")
         ):
+            path = os.path.join(args.source_path, status)
             print(
                 "Found articulated_transforms_train.json, assuming articulated sapien data set!"
             )
             scene_info = sceneLoadTypeCallbacks["articulated"](
-                args.source_path, arges.while_background, args.eval, status
+                path, args.white_background, args.eval, status
             )
         else:
             raise ValueError("Could not recognize scene type!")

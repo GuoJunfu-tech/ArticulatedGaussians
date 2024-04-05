@@ -17,19 +17,18 @@ def render_results(
     type="gif",
 ):
     with torch.no_grad():
+        theta = (
+            revoluteParams.theta.detach().cpu().float()
+            if revoluteParams.theta
+            else None
+        )
+        interval = theta / 20
         for cid, cam in enumerate(viewpoint_cams):
-            if cid == 5:
+            if cid == 10:
                 exit()
-
-            theta = (
-                revoluteParams.theta.detach().cpu().float()
-                if revoluteParams.theta
-                else None
-            )
 
             if type == "gif":
                 k = 20
-                interval = theta / 20
 
                 images = []
                 for i in range(k):
@@ -95,6 +94,25 @@ def render_results(
                 gt_image_np = gt_image.detach().cpu().numpy().transpose((1, 2, 0))
                 gt_img = Image.fromarray(np.uint8(gt_image_np * 255), "RGB")
                 gt_img.save(f"rendered_img/gt_img_{id}.png", "PNG")
+
+                img = Image.fromarray(np.uint8(image_np * 255), "RGB")
+                img.save(save_path, "PNG")
+            elif type == "raw":
+                # revoluteParams.set_theta(theta)
+                save_path = os.path.join(os.getcwd(), f"rendered_img/static_{cid}.png")
+                new_xyz, new_rotations = None, None
+                render_pkg_re = render(
+                    cam,
+                    gaussians,
+                    pipe,
+                    background,
+                    new_xyz,
+                    new_rotations,
+                    0.0,
+                    False,
+                )
+                image = render_pkg_re["render"]
+                image_np = image.detach().cpu().numpy().transpose((1, 2, 0))
 
                 img = Image.fromarray(np.uint8(image_np * 255), "RGB")
                 img.save(save_path, "PNG")

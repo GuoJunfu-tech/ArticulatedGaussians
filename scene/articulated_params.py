@@ -1,18 +1,20 @@
 import torch
 import math
+from typing import Union
 
 
 class Revolute:
     def __init__(self) -> None:
         # Initial
         self._axis = torch.tensor(
-            [1, 0, 0],
+            [0, 1, 0],
             dtype=torch.float32,
             requires_grad=True,
             device="cuda",
         )
+        # gt: [0.73, 0.175, -0.152],
         self._pivot = torch.tensor(
-            [0.73, 0.175, -0.152],
+            [0.0, 0.0, 0.0],
             dtype=torch.float32,
             requires_grad=True,
             device="cuda",
@@ -55,14 +57,26 @@ class Revolute:
             [value], dtype=torch.float32, requires_grad=True, device="cuda"
         )
 
+    @staticmethod
+    def list_to_torch(values: list) -> torch.Tensor:
+        return torch.tensor(
+            values, dtype=torch.float32, requires_grad=True, device="cuda"
+        )
+
     @property
     def axis(self):
         return self._axis
 
     @axis.setter
-    def axis(self, axis: torch.Tensor):
-        if axis.device != self._axis.device:
-            axis = axis.to(self._axis.device)
+    def axis(self, axis: Union[torch.Tensor, list]):
+        if isinstance(axis, torch.Tensor):
+            if axis.device != self._axis.device:
+                axis = axis.to(self._axis.device)
+        elif isinstance(axis, list):
+            axis = self.list_to_torch(axis)
+        else:
+            raise ValueError("[ERROR]::Wrong type of the axis!")
+
         self._axis = axis
 
     @property
@@ -70,7 +84,13 @@ class Revolute:
         return self._pivot
 
     @pivot.setter
-    def pivot(self, pivot: torch.Tensor):
-        if pivot.device != self._pivot.device:
-            pivot = pivot.to(self._pivot.device)
+    def pivot(self, pivot: Union[torch.Tensor, list]):
+        if isinstance(pivot, torch.Tensor):
+            if pivot.device != self._axis.device:
+                pivot = pivot.to(self._axis.device)
+        elif isinstance(pivot, list):
+            pivot = self.list_to_torch(pivot)
+        else:
+            raise ValueError("[ERROR]::Wrong type of the axis!")
+
         self._pivot = pivot

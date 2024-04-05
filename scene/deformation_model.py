@@ -43,6 +43,7 @@ class DeformModel:
             movable_factor = factor
         else:
             movable_factor = self.movable_network(xyz)
+            print("error here")
 
         if theta is None:
             theta = movable_factor * math.pi
