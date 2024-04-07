@@ -35,13 +35,13 @@ class DeformModel:
         pivot,
         theta,
         factor=None,
-        is_gaussian_no_grad=False,
+        # is_gaussian_no_grad=True,
     ):
-        if is_gaussian_no_grad:
-            xyz = xyz.detach()
-            quaternions = rotation.detach()
-        else:
-            quaternions = rotation
+        # if is_gaussian_no_grad:
+        #     xyz = xyz.detach()
+        #     quaternions = rotation.detach()
+        # else:
+        quaternions = rotation
 
         if factor is not None:
             movable_factor = factor

@@ -205,6 +205,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         d_scaling = 0.0  # TODO delete all d_scaling
         # Render
         # deform frame
+        if opt.pretrain < iteration < opt.continue_optimize_arti:
+            gaussians._scaling = gaussians._scaling.detach()
+            gaussians._opacity = gaussians._opacity.detach()
+
 
         loss_start = 0.0
         if iteration < opt.pretrain:
@@ -260,7 +264,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             or 22000 <= iteration < 22050
             or 26800 <= iteration < 26850
         ):
-            image_np = image_start.detach().cpu().numpy().transpose((1, 2, 0))
+            image_np = image_end.detach().cpu().numpy().transpose((1, 2, 0))
             img = Image.fromarray(np.uint8(image_np * 255), "RGB")
             save_path = os.path.join(
                 os.getcwd(), f"rendered_img/static_{iteration}.png"
@@ -275,10 +279,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         loss.backward()
 
         if start == opt.pretrain:
-            grads["xyz"].append(copy.deepcopy(gaussians._xyz.grad.detach().cpu()))
-            grads["rotation"].append(
-                copy.deepcopy(gaussians._rotation.grad.detach().cpu())
-            )
+            pass
+            # grads["xyz"].append(copy.deepcopy(gaussians._xyz.grad.detach().cpu()))
+            # grads["rotation"].append(
+            #     copy.deepcopy(gaussians._rotation.grad.detach().cpu())
+            # )
             # grads["accu"].append(copy.deepcopy(gaussians.xyz_gradient_accum))
 
         iter_end.record()
