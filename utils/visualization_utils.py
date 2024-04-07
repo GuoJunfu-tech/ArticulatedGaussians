@@ -16,16 +16,19 @@ def render_results(
     background,
     type="gif",
 ):
-    with torch.no_grad():
+    try:
         theta = (
             revoluteParams.theta.detach().cpu().float()
             if revoluteParams.theta
             else None
         )
         interval = theta / 20
+    except:
+        pass
+    with torch.no_grad():
         for cid, cam in enumerate(viewpoint_cams):
-            if cid == 10:
-                exit()
+            if cid == 20:
+                break
 
             if type == "gif":
                 k = 20

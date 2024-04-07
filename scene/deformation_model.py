@@ -35,15 +35,18 @@ class DeformModel:
         pivot,
         theta,
         factor=None,
+        is_gaussian_no_grad=False,
     ):
-        xyz = xyz.detach()
-        quaternions = rotation.detach()
+        if is_gaussian_no_grad:
+            xyz = xyz.detach()
+            quaternions = rotation.detach()
+        else:
+            quaternions = rotation
 
         if factor is not None:
             movable_factor = factor
         else:
             movable_factor = self.movable_network(xyz)
-            print("error here")
 
         if theta is None:
             theta = movable_factor * math.pi
@@ -74,12 +77,12 @@ class DeformModel:
         ]
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=2e-15)
 
-        # self.deform_scheduler_args = get_expon_lr_func(
-        #     lr_init=training_args.movable_lr_init,
-        #     lr_final=training_args.movable_lr_final,
-        #     lr_delay_mult=training_args.movable_lr_delay_mult,
-        #     max_steps=training_args.deform_lr_max_steps,
-        # )
+        self.deform_scheduler_args = get_expon_lr_func(
+            lr_init=training_args.movable_lr_init,
+            lr_final=training_args.movable_lr_final,
+            lr_delay_mult=training_args.movable_lr_delay_mult,
+            max_steps=training_args.deform_lr_max_steps,
+        )
 
     def save_weights(self, model_path, iteration):
         out_weights_path = os.path.join(

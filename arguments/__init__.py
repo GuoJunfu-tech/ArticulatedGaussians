@@ -89,6 +89,7 @@ class OptimizationParams(ParamGroup):
         self.position_lr_delay_mult = 0.01
         self.position_lr_max_steps = 30_000
         self.deform_lr_max_steps = 40_000
+
         self.feature_lr = 0.0025
         self.opacity_lr = 0.05
         self.scaling_lr = 0.001
@@ -96,6 +97,8 @@ class OptimizationParams(ParamGroup):
         self.movable_lr_init = 0.001
         self.movable_lr_final = 0.000001
         self.movable_lr_delay_mult = 0.01
+        self.movable_lr_max_steps = 30_000
+
         self.percent_dense = 0.01
         self.lambda_dssim = 0.2
         self.densification_interval = 100
@@ -105,9 +108,8 @@ class OptimizationParams(ParamGroup):
         self.densify_grad_threshold = 0.0002
 
         self.only_train_single_frame = 6_500
-        self.pretrain = 26_600
-        self.continue_optimize_arti = 35_900
-        self.only_train_end_frame_gaussian = 48_000
+        self.pretrain = 22_600
+        self.continue_optimize_arti = 26_900
         super().__init__(parser, "Optimization Parameters")
 
 

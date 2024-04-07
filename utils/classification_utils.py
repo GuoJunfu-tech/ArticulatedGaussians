@@ -128,12 +128,17 @@ def build_mask(factors, method="gmm", max_iters=20):
 
     labels, probs, centers = classify(w, k=2, max_iters=max_iters)
 
+    centers = centers.flatten()
     # make sure that 0 represents the unmovable parts
     if abs(centers[0]) > abs(centers[1]):
         mask = np.ones_like(labels) - labels
-        centers = centers[-2:]
+        centers = centers[::-1]
     else:
         mask = labels
+
+    # since we adopt gmm on abs(factors), we need to find the real center
+    if min(abs(centers[1] - factors)) > 1e-2:
+        centers[1] = -1 * centers[1]
 
     return mask, centers
 
