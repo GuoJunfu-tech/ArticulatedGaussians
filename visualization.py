@@ -53,7 +53,7 @@ def draw_graph(xyz, factor):
 def visualize(xyz, factor=None, grad=None):
     # ------------- GMM classification ---------------
     pcd = o3d.geometry.PointCloud()
-    xyz = xyz.detach().cpu().numpy()
+    # xyz = xyz.detach().cpu().numpy()
     pcd.points = o3d.utility.Vector3dVector(xyz)
 
     if factor is None:
@@ -92,7 +92,7 @@ def visualize(xyz, factor=None, grad=None):
             # ) * (1 - cluster)
             colors[cluster_id, :] = (
                 np.array([1.0, 0.0, 0.0])
-                if cluster > 1e-3
+                if cluster > 1e-5
                 else np.array([0.0, 0.0, 1.0])
             )
 
@@ -143,7 +143,7 @@ def get_grad_pcd(xyz, grad, dx=0.0):
         #     [0.0, 0.0, 1.0]
         # ) * (1 - cluster)
         colors[cluster_id, :] = (
-            np.array([1.0, 0.0, 0.0]) if cluster > 1e-2 else np.array([0.0, 0.0, 1.0])
+            np.array([1.0, 0.0, 0.0]) if cluster > 1 else np.array([0.0, 0.0, 1.0])
         )
 
     pcd_grad.colors = o3d.utility.Vector3dVector(colors)
@@ -170,21 +170,27 @@ if __name__ == "__main__":
 
     xyz_grads = grads["xyz"]
     print(len(xyz_grads))
-    # print(xyz_grads[1:10])
-    grad_1 = np.zeros_like(factors.detach().cpu())
-    grad_2 = grad_1.copy()
+    grad = np.zeros_like(factors.detach().cpu())
     for id, xyz_grad in enumerate(xyz_grads):
         g = torch.norm(xyz_grad, dim=-1, keepdim=True).numpy()
-        if id < 100:
-            grad_1 += g
-        else:
-            grad_2 += g
+        grad += g
+
+    visualize(xyz, factors, grad)
+    # print(xyz_grads[1:10])
+    # grad_1 = np.zeros_like(factors.detach().cpu())
+    # grad_2 = grad_1.copy()
+    # for id, xyz_grad in enumerate(xyz_grads):
+    #     g = torch.norm(xyz_grad, dim=-1, keepdim=True).numpy()
+    #     if id < 100:
+    #         grad_1 += g
+    #     else:
+    #         grad_2 += g
 
     # print(max(grad), min(grad))
     # print(grad)
     # xyz_grad = grads["accu"][0].detach().cpu().numpy().squeeze()
     # visualize(xyz, factors, grad)
-    draw_two_grads(xyz, grad_1, grad_2)
+    # draw_two_grads(xyz, grad_1, grad_2)
     # draw_graph(xyz, data["factors"])
     # g_1 = grads["xyz"][0]
     # g_2 = grads["xyz"][-1]

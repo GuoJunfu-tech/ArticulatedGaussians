@@ -74,7 +74,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     # start = 1
     # end = opt.pretrain
     end = opt.update_mask
-    iter_counter = 0
+    iter_counter = None
 
     if start == opt.pretrain:
         with open("./load_data/stage_2.pkl", "rb") as f:
@@ -135,18 +135,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     type="img",
                 )
 
-                data = {
-                    "gaussians": gaussians,
-                    "factors": factors,
-                    "deformModel": deform,
-                    "params": {
-                        "axis": revolute.axis.tolist(),
-                        "pivot": revolute.pivot.tolist(),
-                    },
-                }
-                with open("./stage_2.pkl", "wb") as f:
-                    pickle.dump(data, f)
-                    print("data saved")
+            data = {
+                "gaussians": gaussians,
+                "factors": factors,
+                "deformModel": deform,
+                "params": {
+                    "axis": revolute.axis.tolist(),
+                    "pivot": revolute.pivot.tolist(),
+                },
+            }
+            with open("./stage_3.pkl", "wb") as f:
+                pickle.dump(data, f)
+                print("data saved")
 
             exit()
 
@@ -179,6 +179,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             print(
                 f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
             )
+            iter_counter = 0
             continue
 
         # ------------------- core: deformation ----------------------------
@@ -196,13 +197,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 mask,
             )
 
-        d_scaling = 0.0  # TODO delete all d_scaling
         # Render
         # deform frame
 
         # ---------------------- render --------------------------
         loss_start = 0.0
-        if (iteration < opt.update_mask) and (iter_counter < 100):
+        if iteration < opt.update_mask:
+            # or (iter_counter < opt.update_mask_interval / 2):
             render_pkg_re = render(
                 viewpoint_cam_start,
                 gaussians,
@@ -229,9 +230,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 viewpoint_cam_start.load2device("cpu")
 
         loss_end = 0.0
-        if (opt.only_train_single_frame < iteration < opt.update_mask) and (
-            100 <= iter_counter < 200
-        ):
+        if opt.only_train_single_frame < iteration < opt.update_mask:
+            # or ( opt.update_mask_interval / 2 <= iter_counter < opt.update_mask_interval
+            # ):
             render_pkg_re = render(
                 viewpoint_cam_end,
                 gaussians,
@@ -239,8 +240,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 background,
                 new_xyz,
                 new_rotations,
-                d_scaling,
-                dataset.is_6dof,
             )
             image_end, viewspace_point_tensor_end, visibility_filter_end, radii_end = (
                 render_pkg_re["render"],
@@ -251,10 +250,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             gt_image_end = viewpoint_cam_end.original_image.cuda()
             loss_end = ll1_ssim_loss(image_end, gt_image_end, opt.lambda_dssim)
 
-        if iter_counter == 199:
-            iter_counter = 0
-        else:
-            iter_counter += 1
+        # if iter_counter == 199:
+        #     iter_counter = 0
+        # else:
+        #     iter_counter += 1
 
         # ---------------- output mid results -------------------------------
         if (
@@ -274,18 +273,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         loss.backward()
 
         # ---------------- record loss (TODO:delete) --------------------------
-        if start == opt.pretrain:
+        if (start == opt.pretrain) and iteration >= 26500:
             grads["opacity"].append(gaussians._opacity.grad.detach().cpu().clone())
             grads["scaling"].append(gaussians._scaling.grad.detach().cpu().clone())
             grads["xyz"].append(gaussians._xyz.grad.detach().cpu().clone())
             grads["rotation"].append(gaussians._rotation.grad.detach().cpu().clone())
 
-        if opt.only_train_single_frame < iteration < opt.update_mask:
-            gaussians._xyz.grad.data.zero_()
-            gaussians._rotation.grad.data.zero_()
-            if opt.pretrain < iteration:
-                gaussians._scaling.grad.data.zero_()
-                gaussians._opacity.grad.data.zero_()
+        # if opt.only_train_single_frame < iteration < opt.update_mask:
+        #     gaussians._xyz.grad.data.zero_()
+        #     gaussians._rotation.grad.data.zero_()
+        #     if opt.pretrain < iteration:
+        #         gaussians._scaling.grad.data.zero_()
+        #         gaussians._opacity.grad.data.zero_()
 
         iter_end.record()
 
@@ -382,10 +381,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 revolute.theta_optimizer.zero_grad()
                 revolute.theta_scheduler.step()
 
-            # if iteration < opt.update_mask:
-            #     gaussians.optimizer.step()
-            #     gaussians.update_learning_rate(iteration)
-            #     gaussians.optimizer.zero_grad(set_to_none=True)
+            if iteration < opt.update_mask:
+                gaussians.optimizer.step()
+                gaussians.update_learning_rate(iteration)
+                gaussians.optimizer.zero_grad(set_to_none=True)
 
     print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
 

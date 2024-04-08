@@ -109,7 +109,7 @@ class OptimizationParams(ParamGroup):
 
         self.only_train_single_frame = 6_500
         self.pretrain = 22_600
-        self.update_mask = 22_901
+        self.update_mask = 26_901
         self.update_mask_interval = 200
         super().__init__(parser, "Optimization Parameters")
 
