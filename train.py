@@ -48,22 +48,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     # deform = DeformModel(dataset.is_blender, dataset.is_6dof)
     deform = DeformModel()
     deform.train_setting(opt)
-
     revolute = Revolute()
 
     scene_start = Scene(dataset, gaussians, status="start")
     scene_end = Scene(dataset, gaussians, status="end")
-
     viewpoint_loader = ViewpointLoader(scene_start, scene_end)
 
     gaussians.training_setup(opt)
-
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
-
     iter_start = torch.cuda.Event(enable_timing=True)
     iter_end = torch.cuda.Event(enable_timing=True)
-
     ema_loss_for_log = 0.0
     best_psnr = 0.0
     best_iteration = 0
@@ -72,15 +67,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         lr_init=0.1, lr_final=1e-15, lr_delay_mult=0.01, max_steps=20000
     )
 
-    # load gaussians
-
     grads = {"xyz": [], "rotation": [], "opacity": [], "scaling": []}
-
     mask = None
+
     start = opt.pretrain
     # start = 1
     # end = opt.pretrain
-    end = opt.continue_optimize_arti
+    end = opt.update_mask
+    iter_counter = 0
 
     if start == opt.pretrain:
         with open("./load_data/stage_2.pkl", "rb") as f:
@@ -97,7 +91,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             gaussians.oneupSHdegree()
 
         if iteration == end:
-            # scene.save(iteration)
             # mask, centers = build_mask(factors.detach().cpu().numpy())
             # mask = torch.tensor(
             #     mask, device="cuda", dtype=torch.float32, requires_grad=False
@@ -169,7 +162,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             continue
 
         if opt.pretrain == iteration:
-            print(f"[Training]::pretrain finished after {iteration} steps")
+            print("[Training]::step 2 is over, now update the mask")
             mask, centers = build_mask(factors.detach().cpu().numpy())
             print((mask == 1).sum())
             mask = torch.tensor(
@@ -188,12 +181,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             )
             continue
 
-            # if opt.only_train_single_frame + 1 <= iteration <= opt.continue_optimize_arti:
-
-        if opt.only_train_single_frame < iteration <= opt.continue_optimize_arti:
+        # ------------------- core: deformation ----------------------------
+        if opt.only_train_single_frame < iteration <= opt.update_mask:
             viewpoint_cam_start, viewpoint_cam_end = (
                 viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
             )
+            # FIXME after pretrain, maybe the cam should be draw one after another
 
             # print(viewpoint_loader._current_fid)
             # deformation
@@ -207,8 +200,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         # Render
         # deform frame
 
+        # ---------------------- render --------------------------
         loss_start = 0.0
-        if iteration < opt.continue_optimize_arti:
+        if (iteration < opt.update_mask) and (iter_counter < 100):
             render_pkg_re = render(
                 viewpoint_cam_start,
                 gaussians,
@@ -235,7 +229,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 viewpoint_cam_start.load2device("cpu")
 
         loss_end = 0.0
-        if opt.only_train_single_frame < iteration < opt.continue_optimize_arti:
+        if (opt.only_train_single_frame < iteration < opt.update_mask) and (
+            100 <= iter_counter < 200
+        ):
             render_pkg_re = render(
                 viewpoint_cam_end,
                 gaussians,
@@ -255,6 +251,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             gt_image_end = viewpoint_cam_end.original_image.cuda()
             loss_end = ll1_ssim_loss(image_end, gt_image_end, opt.lambda_dssim)
 
+        if iter_counter == 199:
+            iter_counter = 0
+        else:
+            iter_counter += 1
+
         # ---------------- output mid results -------------------------------
         if (
             6400 <= iteration < 6450
@@ -267,34 +268,31 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 os.getcwd(), f"rendered_img/static_{iteration}.png"
             )
             img.save(save_path, "PNG")
-        # ----------------------------------------------------------------------
 
         # Loss
-
         loss = loss_end + loss_start
-
         loss.backward()
 
+        # ---------------- record loss (TODO:delete) --------------------------
         if start == opt.pretrain:
-            pass
-            # grads["opacity"].append(gaussians._opacity.grad.detach().cpu().clone())
-            # grads["scaling"].append(gaussians._scaling.grad.detach().cpu().clone())
-            # grads["xyz"].append(gaussians._xyz.grad.detach().cpu().clone())
-            # grads["rotation"].append(gaussians._rotation.grad.detach().cpu().clone())
+            grads["opacity"].append(gaussians._opacity.grad.detach().cpu().clone())
+            grads["scaling"].append(gaussians._scaling.grad.detach().cpu().clone())
+            grads["xyz"].append(gaussians._xyz.grad.detach().cpu().clone())
+            grads["rotation"].append(gaussians._rotation.grad.detach().cpu().clone())
 
-        # if opt.only_train_single_frame < iteration < opt.continue_optimize_arti:
-        #     gaussians._xyz.grad.data.zero_()
-        #     gaussians._rotation.grad.data.zero_()
-        #     if opt.pretrain < iteration:
-        #         gaussians._scaling.grad.data.zero_()
-        #         gaussians._opacity.grad.data.zero_()
-        #     # gaussians._opacity.requires_grad = False
+        if opt.only_train_single_frame < iteration < opt.update_mask:
+            gaussians._xyz.grad.data.zero_()
+            gaussians._rotation.grad.data.zero_()
+            if opt.pretrain < iteration:
+                gaussians._scaling.grad.data.zero_()
+                gaussians._opacity.grad.data.zero_()
 
         iter_end.record()
 
         if dataset.load2gpu_on_the_fly:
             viewpoint_cam_end.load2device("cpu")
 
+        # ---------------------- update --------------------------
         with torch.no_grad():
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
@@ -363,7 +361,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     gaussians.reset_opacity()
 
             # --------- change mask -----------------
-            # TODO
+            # if opt.pretrain < iteration < opt.update_mask:
+            #     if iteration % opt.update_mask_interval == 0:
+            #         grads = gaussians._xyz.grad
 
             # ----------------------------------------
 
@@ -372,20 +372,20 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 deform.optimizer.zero_grad()
                 deform.update_learning_rate(iteration)
 
-            if opt.only_train_single_frame < iteration < opt.continue_optimize_arti:
+            if opt.only_train_single_frame < iteration < opt.update_mask:
                 revolute.axis_pivot_optimizer.step()
                 revolute.axis_pivot_optimizer.zero_grad()
                 revolute.axis_pivot_scheduler.step()
 
-            if opt.pretrain < iteration < opt.continue_optimize_arti:
+            if opt.pretrain < iteration < opt.update_mask:
                 revolute.theta_optimizer.step()
                 revolute.theta_optimizer.zero_grad()
                 revolute.theta_scheduler.step()
 
-            if iteration < opt.continue_optimize_arti:
-                gaussians.optimizer.step()
-                gaussians.update_learning_rate(iteration)
-                gaussians.optimizer.zero_grad(set_to_none=True)
+            # if iteration < opt.update_mask:
+            #     gaussians.optimizer.step()
+            #     gaussians.update_learning_rate(iteration)
+            #     gaussians.optimizer.zero_grad(set_to_none=True)
 
     print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
 
