@@ -74,7 +74,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
     # load gaussians
 
-    grads = {"xyz": [], "rotation": [], "accu": []}
+    grads = {"xyz": [], "rotation": [], "opacity": [], "scaling": []}
 
     mask = None
     start = opt.pretrain
@@ -186,6 +186,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             print(
                 f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
             )
+            continue
 
             # if opt.only_train_single_frame + 1 <= iteration <= opt.continue_optimize_arti:
 
@@ -205,13 +206,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         d_scaling = 0.0  # TODO delete all d_scaling
         # Render
         # deform frame
-        if opt.pretrain < iteration < opt.continue_optimize_arti:
-            gaussians._scaling = gaussians._scaling.detach()
-            gaussians._opacity = gaussians._opacity.detach()
-
 
         loss_start = 0.0
-        if iteration < opt.pretrain:
+        if iteration < opt.continue_optimize_arti:
             render_pkg_re = render(
                 viewpoint_cam_start,
                 gaussians,
@@ -280,11 +277,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
         if start == opt.pretrain:
             pass
-            # grads["xyz"].append(copy.deepcopy(gaussians._xyz.grad.detach().cpu()))
-            # grads["rotation"].append(
-            #     copy.deepcopy(gaussians._rotation.grad.detach().cpu())
-            # )
-            # grads["accu"].append(copy.deepcopy(gaussians.xyz_gradient_accum))
+            # grads["opacity"].append(gaussians._opacity.grad.detach().cpu().clone())
+            # grads["scaling"].append(gaussians._scaling.grad.detach().cpu().clone())
+            # grads["xyz"].append(gaussians._xyz.grad.detach().cpu().clone())
+            # grads["rotation"].append(gaussians._rotation.grad.detach().cpu().clone())
+
+        # if opt.only_train_single_frame < iteration < opt.continue_optimize_arti:
+        #     gaussians._xyz.grad.data.zero_()
+        #     gaussians._rotation.grad.data.zero_()
+        #     if opt.pretrain < iteration:
+        #         gaussians._scaling.grad.data.zero_()
+        #         gaussians._opacity.grad.data.zero_()
+        #     # gaussians._opacity.requires_grad = False
 
         iter_end.record()
 

@@ -74,21 +74,27 @@ def visualize(xyz, factor=None, grad=None):
     # colors = (w < 5e-2) * [1, 0, 0] + (w >= 5e-2) * [0, 0, 1]
     vis = [pcd]
 
-    # ----------------------------------------------------
-
     # ----------------- Grads Visualization ----------------
 
     if grad is not None:
         pcd_grad = o3d.geometry.PointCloud()
         # mask = grad
-        w = (grad - grad.min()) / (grad.max() - grad.min())
-        w = w.squeeze()
+        print(f"max grad: {max(grad)}")
+        # w = (grad - grad.min()) / (grad.max() - grad.min())
+        # w = w.squeeze()
+
+        w = grad.squeeze()
 
         colors = np.zeros((xyz.shape[0], 3))
         for cluster_id, cluster in enumerate(w):
-            colors[cluster_id, :] = np.array([1.0, 0.0, 0.0]) * cluster + np.array(
-                [0.0, 0.0, 1.0]
-            ) * (1 - cluster)
+            # colors[cluster_id, :] = np.array([1.0, 0.0, 0.0]) * cluster + np.array(
+            #     [0.0, 0.0, 1.0]
+            # ) * (1 - cluster)
+            colors[cluster_id, :] = (
+                np.array([1.0, 0.0, 0.0])
+                if cluster > 1e-3
+                else np.array([0.0, 0.0, 1.0])
+            )
 
         pcd_grad.colors = o3d.utility.Vector3dVector(colors)
         xyz_hard = xyz.copy()
@@ -130,15 +136,20 @@ if __name__ == "__main__":
 
     # print(grads["xyz"])
 
-    xyz_grads = grads["xyz"]
+    xyz_grads = grads["opacity"]
+    # print(xyz_grads[1:10])
     grad = np.zeros_like(factors.detach().cpu())
     for id, xyz_grad in enumerate(xyz_grads):
-        grad += torch.norm(grads["rotation"][id], dim=-1, keepdim=True).numpy()
+        if id == 500:
+            break
+        g = torch.norm(xyz_grad, dim=-1, keepdim=True).numpy()
+        grad += g
 
     # print(max(grad), min(grad))
+    # print(grad)
     # xyz_grad = grads["accu"][0].detach().cpu().numpy().squeeze()
     visualize(xyz, factors, grad)
-    draw_graph(xyz, data["factors"])
+    # draw_graph(xyz, data["factors"])
     # g_1 = grads["xyz"][0]
     # g_2 = grads["xyz"][-1]
 
