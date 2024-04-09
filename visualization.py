@@ -91,7 +91,7 @@ def visualize(xyz, factor=None, grad=None):
             # ) * (1 - cluster)
             colors[cluster_id, :] = (
                 np.array([1.0, 0.0, 0.0])
-                if cluster > 1e-5
+                if cluster > 1e-4
                 else np.array([0.0, 0.0, 1.0])
             )
 
@@ -163,19 +163,21 @@ if __name__ == "__main__":
     xyz = gaussians.get_xyz.detach().cpu().numpy()
     # mask = gaussians.get_movable_mask.detach().cpu().numpy()
 
-    # with open("./load_data/grads.pkl", "rb") as f:
-    #     grads = pickle.load(f)
+    with open("./load_data/grads.pkl", "rb") as f:
+        grads = pickle.load(f)
+
+    # grad = gaussians.xyz_gradient_accum
 
     # print(grads["xyz"])
 
-    # xyz_grads = grads["xyz"]
-    # print(len(xyz_grads))
-    # grad = np.zeros_like(factors.detach().cpu())
+    xyz_grads = grads["opacity"]
+    grad = np.zeros_like(factors.detach().cpu(), dtype=np.float32)
     # for id, xyz_grad in enumerate(xyz_grads):
     #     g = torch.norm(xyz_grad, dim=-1, keepdim=True).numpy()
     #     grad += g
+    grad = torch.norm(xyz_grads[-3], dim=-1, keepdim=True).numpy()
 
-    visualize(xyz, factors)
+    visualize(xyz, factors, grad)
     # print(xyz_grads[1:10])
     # grad_1 = np.zeros_like(factors.detach().cpu())
     # grad_2 = grad_1.copy()

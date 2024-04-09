@@ -67,7 +67,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         lr_init=0.1, lr_final=1e-15, lr_delay_mult=0.01, max_steps=20000
     )
 
-    # grads = {"xyz": [], "rotation": [], "opacity": [], "scaling": []}
+    grads = {"xyz": [], "rotation": [], "opacity": [], "scaling": []}
     mask = None
 
     start = opt.pretrain
@@ -109,9 +109,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             #     # print(f"move parts: {move_parts}, factors: {mask.shape[0]}")
 
             if start == opt.pretrain:
-                # with open("grads.pkl", "wb") as f:
-                #     pickle.dump(grads, f)
-                #     print("data saved")
+                with open("grads.pkl", "wb") as f:
+                    pickle.dump(grads, f)
+                    print("data saved")
 
                 # with torch.no_grad():
                 render_results(
@@ -266,22 +266,22 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             img.save(save_path, "PNG")
 
         # Loss
-        loss = loss_end + loss_start
-        loss.backward()
-
         # ---------------- record loss (TODO:delete) --------------------------
-        # if (start == opt.pretrain) and iteration >= 26500:
-        #     grads["opacity"].append(gaussians._opacity.grad.detach().cpu().clone())
-        #     grads["scaling"].append(gaussians._scaling.grad.detach().cpu().clone())
-        #     grads["xyz"].append(gaussians._xyz.grad.detach().cpu().clone())
-        #     grads["rotation"].append(gaussians._rotation.grad.detach().cpu().clone())
+        if (start == opt.pretrain) and (iteration >= (end - 200)):
+            loss_end.backward(retain_graph=True)
+            grads["opacity"].append(gaussians._opacity.grad.detach().cpu().clone())
+            grads["scaling"].append(gaussians._scaling.grad.detach().cpu().clone())
+            # grads["xyz"].append(gaussians._xyz.grad.detach().cpu().clone())
+            # grads["rotation"].append(gaussians._rotation.grad.detach().cpu().clone())
 
-        # if opt.only_train_single_frame < iteration < opt.update_mask:
-        #     gaussians._xyz.grad.data.zero_()
-        #     gaussians._rotation.grad.data.zero_()
-        #     if opt.pretrain < iteration:
-        #         gaussians._scaling.grad.data.zero_()
-        #         gaussians._opacity.grad.data.zero_()
+            revolute.theta_optimizer.zero_grad()
+            revolute.axis_pivot_optimizer.zero_grad()
+            gaussians.optimizer.zero_grad(set_to_none=True)
+            deform.optimizer.zero_grad()
+
+        loss = loss_end + loss_start
+        # loss_end.backward()
+        loss.backward()
 
         iter_end.record()
 
@@ -291,7 +291,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         # ---------------------- update --------------------------
         with torch.no_grad():
             # Progress bar
-            ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
+            # ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
             if iteration % 10 == 0:
                 sp_loss = 0
                 progress_bar.set_postfix(
@@ -320,6 +320,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     gaussians.max_radii2D[visibility_filter_start],
                     radii_start[visibility_filter_start],
                 )
+
+                gaussians.add_densification_stats(
+                    viewspace_point_tensor_start, visibility_filter_start
+                )
                 # FIXME sick code! should update together!!
 
                 # if iteration in saving_iterations:
@@ -331,10 +335,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
                 # --------------------- Densification --------------------------
 
-                gaussians.add_densification_stats(
-                    viewspace_point_tensor_start, visibility_filter_start
-                )
-
                 if (
                     iteration > opt.densify_from_iter
                     and iteration % opt.densification_interval == 0
@@ -343,11 +343,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                         20 if iteration > opt.opacity_reset_interval else None
                     )
 
-                    # FIXME only densify and prune the start scene
                     gaussians.densify_and_prune(
                         opt.densify_grad_threshold,
                         0.005,
-                        scene_start.cameras_extent,
+                        scene_end.cameras_extent,
                         size_threshold,
                     )
 
