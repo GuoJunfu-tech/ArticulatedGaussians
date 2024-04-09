@@ -170,14 +170,14 @@ if __name__ == "__main__":
 
     # print(grads["xyz"])
 
-    xyz_grads = grads["opacity"]
-    grad = np.zeros_like(factors.detach().cpu(), dtype=np.float32)
+    # xyz_grads = grads["opacity"]
+    # grad = np.zeros_like(factors.detach().cpu(), dtype=np.float32)
     # for id, xyz_grad in enumerate(xyz_grads):
     #     g = torch.norm(xyz_grad, dim=-1, keepdim=True).numpy()
     #     grad += g
-    grad = torch.norm(xyz_grads[-3], dim=-1, keepdim=True).numpy()
+    # grad = torch.norm(xyz_grads[-3], dim=-1, keepdim=True).numpy()
 
-    visualize(xyz, factors, grad)
+    visualize(xyz, factors)
     # print(xyz_grads[1:10])
     # grad_1 = np.zeros_like(factors.detach().cpu())
     # grad_2 = grad_1.copy()

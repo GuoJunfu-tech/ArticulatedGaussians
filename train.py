@@ -74,7 +74,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     # start = 1
     # end = opt.pretrain
     end = opt.update_mask
-    iter_counter = None
+    is_inverse = False
 
     if start == opt.pretrain:
         with open("./load_data/stage_2.pkl", "rb") as f:
@@ -185,7 +185,23 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             viewpoint_cam_start, viewpoint_cam_end = (
                 viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
             )
-            # FIXME after pretrain, maybe the cam should be draw one after another
+            if opt.pretrain < iteration < opt.update_mask:
+                if iteration % 500 == 0:
+                    is_inverse = not is_inverse
+                    print(f"inverse is {is_inverse}")
+                    with torch.no_grad():
+                        new_xyz, new_rotations, factors = deform.step(
+                            gaussians,
+                            revolute,
+                        )
+                        revolute._theta.neg_()
+                    gaussians.set_x_and_r(new_xyz, new_rotations)
+
+                if is_inverse:
+                    viewpoint_cam_start, viewpoint_cam_end = (
+                        viewpoint_cam_end,
+                        viewpoint_cam_start,
+                    )
 
             # print(viewpoint_loader._current_fid)
             # deformation
@@ -267,17 +283,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
         # Loss
         # ---------------- record loss (TODO:delete) --------------------------
-        if (start == opt.pretrain) and (iteration >= (end - 200)):
-            loss_end.backward(retain_graph=True)
-            grads["opacity"].append(gaussians._opacity.grad.detach().cpu().clone())
-            grads["scaling"].append(gaussians._scaling.grad.detach().cpu().clone())
-            # grads["xyz"].append(gaussians._xyz.grad.detach().cpu().clone())
-            # grads["rotation"].append(gaussians._rotation.grad.detach().cpu().clone())
+        # if (start == opt.pretrain) and (iteration >= (end - 200)):
+        # loss_end.backward(retain_graph=True)
+        # grads["opacity"].append(gaussians._opacity.grad.detach().cpu().clone())
+        # grads["scaling"].append(gaussians._scaling.grad.detach().cpu().clone())
+        # grads["xyz"].append(gaussians._xyz.grad.detach().cpu().clone())
+        # grads["rotation"].append(gaussians._rotation.grad.detach().cpu().clone())
 
-            revolute.theta_optimizer.zero_grad()
-            revolute.axis_pivot_optimizer.zero_grad()
-            gaussians.optimizer.zero_grad(set_to_none=True)
-            deform.optimizer.zero_grad()
+        # revolute.theta_optimizer.zero_grad()
+        # revolute.axis_pivot_optimizer.zero_grad()
+        # gaussians.optimizer.zero_grad(set_to_none=True)
+        # deform.optimizer.zero_grad()
 
         loss = loss_end + loss_start
         # loss_end.backward()
@@ -406,6 +422,14 @@ def prepare_output_and_logger(args):
     else:
         print("Tensorboard not available: not logging progress")
     return tb_writer
+
+
+def vis(image):
+    from PIL import Image
+
+    image_np = image.detach().cpu().numpy().transpose((1, 2, 0))
+    img = Image.fromarray(np.uint8(image_np * 255), "RGB")
+    img.show()
 
 
 def training_report(

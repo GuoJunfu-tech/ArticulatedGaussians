@@ -104,13 +104,13 @@ class OptimizationParams(ParamGroup):
         self.densification_interval = 100
         self.opacity_reset_interval = 3000
         self.densify_from_iter = 500
-        self.densify_until_iter = 15_000
+        self.densify_until_iter = 35_000
         self.densify_grad_threshold = 0.0002
 
         self.only_train_single_frame = 6_500
-        self.pretrain = 22_600
-        self.update_mask = 24_601
-        self.update_mask_interval = 200
+        self.pretrain = 22_500
+        self.update_mask = 35_601
+        self.inverse_deform_interval = 500
         super().__init__(parser, "Optimization Parameters")
 
 

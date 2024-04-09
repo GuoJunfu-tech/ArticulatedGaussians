@@ -445,6 +445,41 @@ class GaussianModel:
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
+    def refresh_optimizer(self, tensors_dict):
+        optimizable_tensors = {}
+        for group in self.optimizer.param_groups:
+            assert len(group["params"]) == 1
+            if group["name"] not in tensors_dict:
+                continue
+            extension_tensor = tensors_dict[group["name"]]
+            stored_state = self.optimizer.state.get(group["params"][0], None)
+            if stored_state is not None:
+                stored_state["exp_avg"] = torch.zeros_like(extension_tensor)
+                stored_state["exp_avg_sq"] = torch.zeros_like(extension_tensor)
+
+                del self.optimizer.state[group["params"][0]]
+                group["params"][0] = nn.Parameter(extension_tensor.requires_grad_(True))
+                self.optimizer.state[group["params"][0]] = stored_state
+
+                optimizable_tensors[group["name"]] = group["params"][0]
+            else:
+                group["params"][0] = nn.Parameter(extension_tensor.requires_grad_(True))
+                optimizable_tensors[group["name"]] = group["params"][0]
+
+        return optimizable_tensors
+
+    def set_x_and_r(self, new_xyz, new_rotation):
+        d = {
+            "xyz": new_xyz,
+            "rotation": new_rotation,
+        }
+        optimizable_tensors = self.refresh_optimizer(d)
+        self._xyz = optimizable_tensors["xyz"]
+        self._rotation = optimizable_tensors["rotation"]
+        self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
+        self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
+        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+
     def densify_and_split(self, grads, grad_threshold, scene_extent, N=2):
         n_init_points = self.get_xyz.shape[0]
         # Extract points that satisfy the gradient condition
