@@ -42,6 +42,8 @@ class GaussianModel:
         self.max_radii2D = torch.empty(0)
         self.xyz_gradient_accum = torch.empty(0)
 
+        self._movable_mask = None  # Not learnable !!!
+
         self.optimizer = None
 
         self.scaling_activation = torch.exp
@@ -53,6 +55,10 @@ class GaussianModel:
         self.inverse_opacity_activation = inverse_sigmoid
 
         self.rotation_activation = torch.nn.functional.normalize
+
+    @property
+    def get_movable_mask(self):
+        return self._movable_mask
 
     @property
     def get_scaling(self):
@@ -133,74 +139,38 @@ class GaussianModel:
 
         self.spatial_lr_scale = 5
 
-        if training_stage == "Gaussians":
-            l = [
-                {
-                    "params": [self._xyz],
-                    "lr": training_args.position_lr_init * self.spatial_lr_scale,
-                    "name": "xyz",
-                },
-                {
-                    "params": [self._features_dc],
-                    "lr": training_args.feature_lr,
-                    "name": "f_dc",
-                },
-                {
-                    "params": [self._features_rest],
-                    "lr": training_args.feature_lr / 20.0,
-                    "name": "f_rest",
-                },
-                {
-                    "params": [self._opacity],
-                    "lr": training_args.opacity_lr,
-                    "name": "opacity",
-                },
-                {
-                    "params": [self._scaling],
-                    "lr": training_args.scaling_lr * self.spatial_lr_scale,
-                    "name": "scaling",
-                },
-                {
-                    "params": [self._rotation],
-                    "lr": training_args.rotation_lr,
-                    "name": "rotation",
-                },
-            ]
-        elif training_stage == "Articulated":
-            l = [
-                # {
-                #     "params": [self._xyz],
-                #     "lr": training_args.position_lr_init * self.spatial_lr_scale,
-                #     "name": "xyz",
-                # },
-                {
-                    "params": [self._features_dc],
-                    "lr": training_args.feature_lr,
-                    "name": "f_dc",
-                },
-                {
-                    "params": [self._features_rest],
-                    "lr": training_args.feature_lr / 20.0,
-                    "name": "f_rest",
-                },
-                {
-                    "params": [self._opacity],
-                    "lr": training_args.opacity_lr,
-                    "name": "opacity",
-                },
-                {
-                    "params": [self._scaling],
-                    "lr": training_args.scaling_lr * self.spatial_lr_scale,
-                    "name": "scaling",
-                },
-                # {
-                #     "params": [self._rotation],
-                #     "lr": training_args.rotation_lr,
-                #     "name": "rotation",
-                # },
-            ]
-        else:
-            pass
+        l = [
+            {
+                "params": [self._xyz],
+                "lr": training_args.position_lr_init * self.spatial_lr_scale,
+                "name": "xyz",
+            },
+            {
+                "params": [self._features_dc],
+                "lr": training_args.feature_lr,
+                "name": "f_dc",
+            },
+            {
+                "params": [self._features_rest],
+                "lr": training_args.feature_lr / 20.0,
+                "name": "f_rest",
+            },
+            {
+                "params": [self._opacity],
+                "lr": training_args.opacity_lr,
+                "name": "opacity",
+            },
+            {
+                "params": [self._scaling],
+                "lr": training_args.scaling_lr * self.spatial_lr_scale,
+                "name": "scaling",
+            },
+            {
+                "params": [self._rotation],
+                "lr": training_args.rotation_lr,
+                "name": "rotation",
+            },
+        ]
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
         self.xyz_scheduler_args = get_expon_lr_func(
@@ -369,6 +339,10 @@ class GaussianModel:
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
 
+    def prune_movable_mask(self, prune_filter):
+        valid_points_mask = ~prune_filter
+        self._mask = self._mask[valid_points_mask]
+
     def _prune_optimizer(self, mask):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
@@ -515,6 +489,11 @@ class GaussianModel:
         )
         self.prune_points(prune_filter)
 
+        if isinstance(self._mask, np.ndarray):
+            new_mask = self._mask[selected_pts_mask]
+            self._mask = np.concatenate([self._mask, new_mask])
+            self.prune_movable_mask(prune_filter)
+
     def densify_and_clone(self, grads, grad_threshold, scene_extent):
         # Extract points that satisfy the gradient condition
         selected_pts_mask = torch.where(
@@ -532,6 +511,10 @@ class GaussianModel:
         new_opacities = self._opacity[selected_pts_mask]
         new_scaling = self._scaling[selected_pts_mask]
         new_rotation = self._rotation[selected_pts_mask]
+
+        if isinstance(self._mask, np.ndarray):
+            new_mask = self._mask[selected_pts_mask]
+            self._mask = np.concatenate([self._mask, new_mask])
 
         self.densification_postfix(
             new_xyz,
@@ -557,6 +540,8 @@ class GaussianModel:
                 torch.logical_or(prune_mask, big_points_vs), big_points_ws
             )
         self.prune_points(prune_mask)
+        if isinstance(self._mask, np.ndarray):
+            self.prune_movable_mask(prune_mask)
 
         torch.cuda.empty_cache()
 
@@ -565,3 +550,9 @@ class GaussianModel:
             viewspace_point_tensor.grad[update_filter, :2], dim=-1, keepdim=True
         )
         self.denom[update_filter] += 1
+
+    def initialize_mask(self, mask):
+        if len(mask) != self._xyz.shape[0]:
+            raise ValueError("mask must be align with Gaussians' number!")
+
+        _mask = mask

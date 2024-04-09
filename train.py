@@ -164,10 +164,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         if opt.pretrain == iteration:
             print("[Training]::step 2 is over, now update the mask")
             mask, centers = build_mask(factors.detach().cpu().numpy())
-            print((mask == 1).sum())
-            mask = torch.tensor(
-                mask, device="cuda", dtype=torch.float32, requires_grad=False
-            )
+            gaussians.initialize_mask(np.array(mask))
+
             # revolute.set_theta(120 / 180 * math.pi)  # TODO delete
             revolute.set_theta(centers[1].item() * math.pi)
             revolute.reset_param_optimizer()
@@ -179,7 +177,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             print(
                 f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
             )
-            iter_counter = 0
             continue
 
         # ------------------- core: deformation ----------------------------
