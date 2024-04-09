@@ -67,7 +67,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         lr_init=0.1, lr_final=1e-15, lr_delay_mult=0.01, max_steps=20000
     )
 
-    grads = {"xyz": [], "rotation": [], "opacity": [], "scaling": []}
+    # grads = {"xyz": [], "rotation": [], "opacity": [], "scaling": []}
     mask = None
 
     start = opt.pretrain
@@ -82,6 +82,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         gaussians = data["gaussians"]
         factors = data["factors"]
         revolute_params = data["params"]
+        gaussians._movable_mask = None
 
     for iteration in range(start, end + 1):
         iter_start.record()
@@ -108,9 +109,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             #     # print(f"move parts: {move_parts}, factors: {mask.shape[0]}")
 
             if start == opt.pretrain:
-                with open("grads.pkl", "wb") as f:
-                    pickle.dump(grads, f)
-                    print("data saved")
+                # with open("grads.pkl", "wb") as f:
+                #     pickle.dump(grads, f)
+                #     print("data saved")
 
                 # with torch.no_grad():
                 render_results(
@@ -137,7 +138,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
             data = {
                 "gaussians": gaussians,
-                "factors": factors,
+                "factors": gaussians.get_movable_mask,
                 "deformModel": deform,
                 "params": {
                     "axis": revolute.axis.tolist(),
@@ -191,7 +192,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             new_xyz, new_rotations, factors = deform.step(
                 gaussians,
                 revolute,
-                mask,
             )
 
         # Render
@@ -270,11 +270,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         loss.backward()
 
         # ---------------- record loss (TODO:delete) --------------------------
-        if (start == opt.pretrain) and iteration >= 26500:
-            grads["opacity"].append(gaussians._opacity.grad.detach().cpu().clone())
-            grads["scaling"].append(gaussians._scaling.grad.detach().cpu().clone())
-            grads["xyz"].append(gaussians._xyz.grad.detach().cpu().clone())
-            grads["rotation"].append(gaussians._rotation.grad.detach().cpu().clone())
+        # if (start == opt.pretrain) and iteration >= 26500:
+        #     grads["opacity"].append(gaussians._opacity.grad.detach().cpu().clone())
+        #     grads["scaling"].append(gaussians._scaling.grad.detach().cpu().clone())
+        #     grads["xyz"].append(gaussians._xyz.grad.detach().cpu().clone())
+        #     grads["rotation"].append(gaussians._rotation.grad.detach().cpu().clone())
 
         # if opt.only_train_single_frame < iteration < opt.update_mask:
         #     gaussians._xyz.grad.data.zero_()
@@ -306,7 +306,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 progress_bar.close()
 
             # Keep track of max radii in image-space for pruning
-            if opt.only_train_single_frame < iteration < opt.pretrain:
+            if opt.only_train_single_frame < iteration < opt.update_mask:
                 gaussians.max_radii2D[visibility_filter_end] = torch.max(
                     gaussians.max_radii2D[visibility_filter_end],
                     radii_end[visibility_filter_end],
@@ -315,7 +315,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     viewspace_point_tensor_end, visibility_filter_end
                 )
 
-            if iteration < opt.pretrain:
+            if iteration < opt.update_mask:
                 gaussians.max_radii2D[visibility_filter_start] = torch.max(
                     gaussians.max_radii2D[visibility_filter_start],
                     radii_start[visibility_filter_start],

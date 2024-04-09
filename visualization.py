@@ -58,10 +58,9 @@ def visualize(xyz, factor=None, grad=None):
 
     if factor is None:
         factor = np.ones((xyz.shape[0], 1))
-    else:
-        factor = factor.detach().cpu().numpy()
 
-    mask, centers = build_mask(factor, "gmm")
+    mask = factor.squeeze()
+    # mask, centers = build_mask(factor, "gmm")
     # mask = abs(factor) < 5e-2
     # print(centers)
     # mask = abs(factor)
@@ -154,7 +153,7 @@ def get_grad_pcd(xyz, grad, dx=0.0):
 
 
 if __name__ == "__main__":
-    with open("./load_data/stage_2.pkl", "rb") as f:
+    with open("./load_data/stage_3.pkl", "rb") as f:
         # with open("./final_params.pkl", "rb") as f:
         data = pickle.load(f)
 
@@ -162,20 +161,21 @@ if __name__ == "__main__":
     factors = data["factors"]
 
     xyz = gaussians.get_xyz.detach().cpu().numpy()
+    # mask = gaussians.get_movable_mask.detach().cpu().numpy()
 
-    with open("./load_data/grads.pkl", "rb") as f:
-        grads = pickle.load(f)
+    # with open("./load_data/grads.pkl", "rb") as f:
+    #     grads = pickle.load(f)
 
     # print(grads["xyz"])
 
-    xyz_grads = grads["xyz"]
-    print(len(xyz_grads))
-    grad = np.zeros_like(factors.detach().cpu())
-    for id, xyz_grad in enumerate(xyz_grads):
-        g = torch.norm(xyz_grad, dim=-1, keepdim=True).numpy()
-        grad += g
+    # xyz_grads = grads["xyz"]
+    # print(len(xyz_grads))
+    # grad = np.zeros_like(factors.detach().cpu())
+    # for id, xyz_grad in enumerate(xyz_grads):
+    #     g = torch.norm(xyz_grad, dim=-1, keepdim=True).numpy()
+    #     grad += g
 
-    visualize(xyz, factors, grad)
+    visualize(xyz, factors)
     # print(xyz_grads[1:10])
     # grad_1 = np.zeros_like(factors.detach().cpu())
     # grad_2 = grad_1.copy()

@@ -341,7 +341,7 @@ class GaussianModel:
 
     def prune_movable_mask(self, prune_filter):
         valid_points_mask = ~prune_filter
-        self._mask = self._mask[valid_points_mask]
+        self._movable_mask = self._movable_mask[valid_points_mask]
 
     def _prune_optimizer(self, mask):
         optimizable_tensors = {}
@@ -489,10 +489,15 @@ class GaussianModel:
         )
         self.prune_points(prune_filter)
 
-        if isinstance(self._mask, np.ndarray):
-            new_mask = self._mask[selected_pts_mask]
-            self._mask = np.concatenate([self._mask, new_mask])
+        if isinstance(self._movable_mask, torch.Tensor):
+            new_mask = self._movable_mask[selected_pts_mask].repeat(N)
+            self._movable_mask = torch.concatenate(
+                [self._movable_mask, new_mask], dim=0
+            )
+
             self.prune_movable_mask(prune_filter)
+
+        assert self._movable_mask.shape[0] == self.get_xyz.shape[0]
 
     def densify_and_clone(self, grads, grad_threshold, scene_extent):
         # Extract points that satisfy the gradient condition
@@ -512,9 +517,11 @@ class GaussianModel:
         new_scaling = self._scaling[selected_pts_mask]
         new_rotation = self._rotation[selected_pts_mask]
 
-        if isinstance(self._mask, np.ndarray):
-            new_mask = self._mask[selected_pts_mask]
-            self._mask = np.concatenate([self._mask, new_mask])
+        if isinstance(self._movable_mask, torch.Tensor):
+            new_mask = self._movable_mask[selected_pts_mask]
+            self._movable_mask = torch.concatenate(
+                [self._movable_mask, new_mask], dim=0
+            )
 
         self.densification_postfix(
             new_xyz,
@@ -524,6 +531,7 @@ class GaussianModel:
             new_scaling,
             new_rotation,
         )
+        assert self._movable_mask.shape[0] == self.get_xyz.shape[0]
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
         grads = self.xyz_gradient_accum / self.denom
@@ -540,10 +548,13 @@ class GaussianModel:
                 torch.logical_or(prune_mask, big_points_vs), big_points_ws
             )
         self.prune_points(prune_mask)
-        if isinstance(self._mask, np.ndarray):
+        if isinstance(self._movable_mask, torch.Tensor):
             self.prune_movable_mask(prune_mask)
 
         torch.cuda.empty_cache()
+
+    def cat_movable_mask(self, filter):
+        pass
 
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
         self.xyz_gradient_accum[update_filter] += torch.norm(
@@ -552,7 +563,8 @@ class GaussianModel:
         self.denom[update_filter] += 1
 
     def initialize_mask(self, mask):
-        if len(mask) != self._xyz.shape[0]:
+        mask = torch.tensor(mask, device="cuda", requires_grad=False)
+        if mask.shape[0] != self._xyz.shape[0]:
             raise ValueError("mask must be align with Gaussians' number!")
 
-        _mask = mask
+        self._movable_mask = mask

@@ -24,7 +24,7 @@ class DeformModel:
             revolute.axis,
             revolute.pivot,
             revolute.theta,
-            mask,
+            gaussians.get_movable_mask,
         )
 
     def deform(
@@ -35,15 +35,16 @@ class DeformModel:
         pivot,
         theta,
         factor=None,
-        # is_gaussian_no_grad=True,
+        is_gaussian_no_grad=True,
     ):
-        # if is_gaussian_no_grad:
-        #     xyz = xyz.detach()
-        #     quaternions = rotation.detach()
-        # else:
-        quaternions = rotation
+        if is_gaussian_no_grad:
+            xyz = xyz.detach()
+            quaternions = rotation.detach()
+        else:
+            quaternions = rotation
 
         if factor is not None:
+            assert factor.shape[0] == xyz.shape[0]
             movable_factor = factor
         else:
             movable_factor = self.movable_network(xyz)
