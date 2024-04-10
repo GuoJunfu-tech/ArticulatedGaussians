@@ -80,7 +80,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         with open("./load_data/stage_2.pkl", "rb") as f:
             data = pickle.load(f)
         gaussians = data["gaussians"]
-        factors = data["factors"]
+        factors = data["factor"]
         revolute_params = data["params"]
         gaussians._movable_mask = None
 
@@ -138,7 +138,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
             data = {
                 "gaussians": gaussians,
-                "factors": gaussians.get_movable_mask,
+                "mask": gaussians.get_movable_mask,
+                "factor": factors,
                 "deformModel": deform,
                 "params": {
                     "axis": revolute.axis.tolist(),
@@ -185,23 +186,26 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             viewpoint_cam_start, viewpoint_cam_end = (
                 viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
             )
-            if opt.pretrain < iteration < opt.update_mask:
-                if iteration % 500 == 0:
-                    is_inverse = not is_inverse
-                    print(f"inverse is {is_inverse}")
-                    with torch.no_grad():
-                        new_xyz, new_rotations, factors = deform.step(
-                            gaussians,
-                            revolute,
-                        )
-                        revolute._theta.neg_()
-                    gaussians.set_x_and_r(new_xyz, new_rotations)
+            # if opt.pretrain < iteration < opt.update_mask:
+            #     if iteration % opt.inverse_deform_interval == 0:
+            #         is_inverse = not is_inverse
+            #         print(f"inverse is {is_inverse}")
+            #         with torch.no_grad():
+            #             new_xyz, new_rotations, factors = deform.step(
+            #                 gaussians,
+            #                 revolute,
+            #             )
+            #             if iteration < opt.pretrain:
+            #                 pass
+            #             else:
+            #                 revolute._theta.neg_()
+            #         gaussians.set_x_and_r(new_xyz, new_rotations)
 
-                if is_inverse:
-                    viewpoint_cam_start, viewpoint_cam_end = (
-                        viewpoint_cam_end,
-                        viewpoint_cam_start,
-                    )
+            #     if is_inverse:
+            #         viewpoint_cam_start, viewpoint_cam_end = (
+            #             viewpoint_cam_end,
+            #             viewpoint_cam_start,
+            #         )
 
             # print(viewpoint_loader._current_fid)
             # deformation
@@ -272,9 +276,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         if (
             6400 <= iteration < 6450
             or 22000 <= iteration < 22050
-            or 26800 <= iteration < 26850
+            or 34800 <= iteration < 34850
         ):
-            image_np = image_end.detach().cpu().numpy().transpose((1, 2, 0))
+            image_np = image_start.detach().cpu().numpy().transpose((1, 2, 0))
             img = Image.fromarray(np.uint8(image_np * 255), "RGB")
             save_path = os.path.join(
                 os.getcwd(), f"rendered_img/static_{iteration}.png"

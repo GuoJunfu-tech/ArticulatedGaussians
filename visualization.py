@@ -16,17 +16,6 @@ from utils.classification_utils import kmeans, gmm
 from utils.classification_utils import build_mask
 
 
-def value_to_color(value):
-    """将单个数值转换为RGB颜色。"""
-    # 确保数值在0和1之间
-    value = np.clip(value, 0, 1)
-    # 线性插值计算R和B分量
-    red = int(255 * value)
-    blue = int(255 * (1 - value))
-    # 返回RGB颜色
-    return [red, 0, blue]
-
-
 def draw_graph(xyz, factor):
     import numpy as np
     import matplotlib.pyplot as plt
@@ -59,14 +48,16 @@ def visualize(xyz, factor=None, grad=None):
     if factor is None:
         factor = np.ones((xyz.shape[0], 1))
 
-    mask = factor.squeeze()
-    # mask, centers = build_mask(factor, "gmm")
+    # mask = factor.squeeze()
+    factor = factor.reshape(-1, 1)
+    mask, centers = build_mask(factor, "gmm")
     # mask = abs(factor) < 5e-2
     # print(centers)
     # mask = abs(factor)
 
     colors = np.zeros((xyz.shape[0], 3))
     for cluster_id, cluster in enumerate(mask):
+        # cluster = int(cluster)
         colors[cluster_id, :] = [1, 0, 0] * cluster + [0, 0, 1] * (1 - cluster)
 
     pcd.colors = o3d.utility.Vector3dVector(colors)
@@ -105,8 +96,10 @@ def visualize(xyz, factor=None, grad=None):
     o3d.visualization.draw_geometries(vis)
 
 
-def draw_one_color(xyz, filter):
+def draw_one_color(xyz, filter, dx=0.0):
     pcd = o3d.geometry.PointCloud()
+    if dx:
+        xyz[:, 0] += dx
     pcd.points = o3d.utility.Vector3dVector(xyz)
 
     colors = np.zeros((xyz.shape[0], 3))
@@ -117,7 +110,8 @@ def draw_one_color(xyz, filter):
             colors[id, :] = [0, 0, 1]
 
     pcd.colors = o3d.utility.Vector3dVector(colors)
-    o3d.visualization.draw_geometries([pcd])
+    # o3d.visualization.draw_geometries([pcd])
+    return pcd
 
 
 def draw_two_grads(xyz, grad_1, grad_2):
@@ -158,13 +152,28 @@ if __name__ == "__main__":
         data = pickle.load(f)
 
     gaussians = data["gaussians"]
-    factors = data["factors"]
+    # factors = data["factor"].detach().cpu().numpy()
+    factors = gaussians._movable_mask.detach().cpu().numpy()
 
     xyz = gaussians.get_xyz.detach().cpu().numpy()
+    pcd_1 = draw_one_color(xyz, factors)
+
+    with open("./load_data/stage_3_no_inv.pkl", "rb") as f:
+        # with open("./final_params.pkl", "rb") as f:
+        data = pickle.load(f)
+
+    gaussians = data["gaussians"]
+    # factors = data["factor"].detach().cpu().numpy()
+    factors = gaussians._movable_mask.detach().cpu().numpy()
+
+    xyz = gaussians.get_xyz.detach().cpu().numpy()
+    pcd_2 = draw_one_color(xyz, factors, dx=1)
+
+    o3d.visualization.draw_geometries([pcd_1, pcd_2])
     # mask = gaussians.get_movable_mask.detach().cpu().numpy()
 
-    with open("./load_data/grads.pkl", "rb") as f:
-        grads = pickle.load(f)
+    # with open("./load_data/grads.pkl", "rb") as f:
+    #     grads = pickle.load(f)
 
     # grad = gaussians.xyz_gradient_accum
 
@@ -177,7 +186,7 @@ if __name__ == "__main__":
     #     grad += g
     # grad = torch.norm(xyz_grads[-3], dim=-1, keepdim=True).numpy()
 
-    visualize(xyz, factors)
+    # visualize(xyz, factors)
     # print(xyz_grads[1:10])
     # grad_1 = np.zeros_like(factors.detach().cpu())
     # grad_2 = grad_1.copy()

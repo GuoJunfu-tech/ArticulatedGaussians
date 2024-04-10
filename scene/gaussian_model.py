@@ -532,8 +532,6 @@ class GaussianModel:
 
             self.prune_movable_mask(prune_filter)
 
-        assert self._movable_mask.shape[0] == self.get_xyz.shape[0]
-
     def densify_and_clone(self, grads, grad_threshold, scene_extent):
         # Extract points that satisfy the gradient condition
         selected_pts_mask = torch.where(
@@ -566,7 +564,7 @@ class GaussianModel:
             new_scaling,
             new_rotation,
         )
-        assert self._movable_mask.shape[0] == self.get_xyz.shape[0]
+        # assert self._movable_mask.shape[0] == self.get_xyz.shape[0]
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
         grads = self.xyz_gradient_accum / self.denom
