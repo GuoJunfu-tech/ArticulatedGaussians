@@ -98,11 +98,14 @@ def visualize(xyz, factor=None, grad=None):
 
 def draw_one_color(xyz, filter, dx=0.0):
     pcd = o3d.geometry.PointCloud()
+    new_xyz = xyz.copy()
+
     if dx:
-        xyz[:, 0] += dx
-    pcd.points = o3d.utility.Vector3dVector(xyz)
+        new_xyz[:, 0] += dx
+    pcd.points = o3d.utility.Vector3dVector(new_xyz)
 
     colors = np.zeros((xyz.shape[0], 3))
+    print(filter.shape)
     for id, is_vis in enumerate(filter):
         if is_vis:
             colors[id, :] = [1, 0, 0]
@@ -147,45 +150,47 @@ def get_grad_pcd(xyz, grad, dx=0.0):
 
 
 if __name__ == "__main__":
-    with open("./load_data/stage_3.pkl", "rb") as f:
-        # with open("./final_params.pkl", "rb") as f:
-        data = pickle.load(f)
+    # with open("./load_data/stage_3.pkl", "rb") as f:
+    #     # with open("./final_params.pkl", "rb") as f:
+    #     data = pickle.load(f)
 
-    gaussians = data["gaussians"]
-    # factors = data["factor"].detach().cpu().numpy()
-    factors = gaussians._movable_mask.detach().cpu().numpy()
+    # gaussians = data["gaussians"]
+    # # factors = data["factor"].detach().cpu().numpy()
+    # factors = gaussians._movable_mask.detach().cpu().numpy()
 
-    xyz = gaussians.get_xyz.detach().cpu().numpy()
-    pcd_1 = draw_one_color(xyz, factors)
+    # xyz = gaussians.get_xyz.detach().cpu().numpy()
+    # pcd_1 = draw_one_color(xyz, factors)
 
-    with open("./load_data/stage_3_no_inv.pkl", "rb") as f:
-        # with open("./final_params.pkl", "rb") as f:
-        data = pickle.load(f)
+    # with open("./load_data/stage_3.pkl", "rb") as f:
+    #     # with open("./final_params.pkl", "rb") as f:
+    #     data = pickle.load(f)
+    with open("./load_data/grads.pkl", "rb") as f:
+        grads = pickle.load(f)
 
-    gaussians = data["gaussians"]
+    gaussians = grads["gaussians"]
     # factors = data["factor"].detach().cpu().numpy()
     factors = gaussians._movable_mask.detach().cpu().numpy()
 
     xyz = gaussians.get_xyz.detach().cpu().numpy()
     pcd_2 = draw_one_color(xyz, factors, dx=1)
 
-    o3d.visualization.draw_geometries([pcd_1, pcd_2])
-    # mask = gaussians.get_movable_mask.detach().cpu().numpy()
+    # # mask = gaussians.get_movable_mask.detach().cpu().numpy()
 
-    # with open("./load_data/grads.pkl", "rb") as f:
-    #     grads = pickle.load(f)
-
-    # grad = gaussians.xyz_gradient_accum
-
-    # print(grads["xyz"])
-
-    # xyz_grads = grads["opacity"]
-    # grad = np.zeros_like(factors.detach().cpu(), dtype=np.float32)
-    # for id, xyz_grad in enumerate(xyz_grads):
-    #     g = torch.norm(xyz_grad, dim=-1, keepdim=True).numpy()
-    #     grad += g
+    xyz_grads = grads["xyz"]
+    print(len(xyz_grads))
+    grad = 0.0
+    for id, xyz_grad in enumerate(xyz_grads):
+        if id == 90:
+            break
+        g = torch.norm(xyz_grad, dim=-1, keepdim=True).numpy()
+        grad += g.squeeze()
     # grad = torch.norm(xyz_grads[-3], dim=-1, keepdim=True).numpy()
+    print(max(grad), min(grad))
+    factor = grad > 5e-3
 
+    pcd_1 = draw_one_color(xyz, factor)
+
+    o3d.visualization.draw_geometries([pcd_1, pcd_2])
     # visualize(xyz, factors)
     # print(xyz_grads[1:10])
     # grad_1 = np.zeros_like(factors.detach().cpu())

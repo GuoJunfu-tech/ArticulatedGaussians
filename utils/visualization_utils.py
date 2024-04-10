@@ -37,9 +37,7 @@ def render_results(
                 for i in range(k):
                     revoluteParams.set_theta(i * interval)
                     new_xyz, new_rotations, _ = deformModel.step(
-                        gaussians,
-                        revoluteParams,
-                        factors,
+                        gaussians, revoluteParams, keep_gs_grad=False
                     )
                     render_pkg_re = render(
                         cam,
@@ -48,8 +46,6 @@ def render_results(
                         background,
                         new_xyz,
                         new_rotations,
-                        0.0,
-                        False,
                     )
                     image = render_pkg_re["render"]
                     image_np = image.detach().cpu().numpy().transpose((1, 2, 0))

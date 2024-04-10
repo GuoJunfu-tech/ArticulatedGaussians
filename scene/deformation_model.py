@@ -17,7 +17,7 @@ class DeformModel:
         self.spatial_lr_scale = 5
         self.deform_operator = RotationOperator()
 
-    def step(self, gaussians, revolute, mask=None):
+    def step(self, gaussians, revolute, keep_gs_grad=False):
         return self.deform(
             gaussians.get_xyz,
             gaussians.get_rotation,
@@ -25,6 +25,7 @@ class DeformModel:
             revolute.pivot,
             revolute.theta,
             gaussians.get_movable_mask,
+            keep_gs_grad=keep_gs_grad,
         )
 
     def deform(
@@ -35,9 +36,9 @@ class DeformModel:
         pivot,
         theta,
         factor=None,
-        is_gaussian_no_grad=True,
+        keep_gs_grad=False,
     ):
-        if is_gaussian_no_grad:
+        if not keep_gs_grad:
             xyz = xyz.detach()
             quaternions = rotation.detach()
         else:

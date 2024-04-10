@@ -70,11 +70,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     grads = {"xyz": [], "rotation": [], "opacity": [], "scaling": []}
     mask = None
 
-    start = opt.pretrain
-    # start = 1
+    # start = opt.pretrain
+    start = 1
     # end = opt.pretrain
     end = opt.update_mask
     is_inverse = False
+    # is_end_frame_with_grad = False
+    # grad_counter = 0
 
     if start == opt.pretrain:
         with open("./load_data/stage_2.pkl", "rb") as f:
@@ -108,12 +110,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             #     # move_parts = mask.sum()
             #     # print(f"move parts: {move_parts}, factors: {mask.shape[0]}")
 
-            if start == opt.pretrain:
-                with open("grads.pkl", "wb") as f:
-                    pickle.dump(grads, f)
-                    print("data saved")
+            if end == opt.update_mask:
+                # with open("grads.pkl", "wb") as f:
+                #     grads["gaussians"] = gaussians
+                #     pickle.dump(grads, f)
+                #     print("grad data saved")
 
-                # with torch.no_grad():
                 render_results(
                     viewpoint_loader.get_cameras("start"),
                     gaussians,
@@ -124,17 +126,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     background,
                     type="gif",
                 )
-            else:
-                _, _, factors = render_results(
-                    viewpoint_loader.get_cameras("start"),
-                    gaussians,
-                    deform,
-                    revolute,
-                    mask,
-                    pipe,
-                    background,
-                    type="img",
-                )
+            _, _, factors = render_results(
+                viewpoint_loader.get_cameras("start"),
+                gaussians,
+                deform,
+                revolute,
+                mask,
+                pipe,
+                background,
+                type="img",
+            )
 
             data = {
                 "gaussians": gaussians,
@@ -165,20 +166,22 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
         if opt.pretrain == iteration:
             print("[Training]::step 2 is over, now update the mask")
-            mask, centers = build_mask(factors.detach().cpu().numpy())
-            gaussians.initialize_mask(np.array(mask))
-
-            # revolute.set_theta(120 / 180 * math.pi)  # TODO delete
-            revolute.set_theta(centers[1].item() * math.pi)
-            revolute.reset_param_optimizer()
-            # revolute.axis = revolute_params["axis"]
-            # revolute.pivot = revolute_params["pivot"]
-            revolute.axis = [1.0, 0.0, 0.0]
-            revolute.pivot = [0.0, 0.008, 0.012]
-            print(f"predicted articulated params:")
             print(
                 f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
             )
+            mask, centers = build_mask(factors.detach().cpu().numpy())
+            gaussians.initialize_mask(np.array(mask))
+            revolute.reset_param_optimizer()
+
+            # revolute.set_theta(120 / 180 * math.pi)  # TODO delete
+            revolute.set_theta(centers[1].item() * math.pi)
+
+            # if start == opt.pretrain:
+            # revolute.axis = revolute_params["axis"]
+            # revolute.pivot = revolute_params["pivot"]
+            # revolute.axis = [1.0, 0.0, 0.0]
+            # revolute.pivot = [0.0, 0.008, 0.012]
+
             continue
 
         # ------------------- core: deformation ----------------------------
@@ -186,6 +189,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             viewpoint_cam_start, viewpoint_cam_end = (
                 viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
             )
+
+            # ---------------- inverse training --------------------------
             # if opt.pretrain < iteration < opt.update_mask:
             #     if iteration % opt.inverse_deform_interval == 0:
             #         is_inverse = not is_inverse
@@ -208,14 +213,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             #         )
 
             # print(viewpoint_loader._current_fid)
-            # deformation
-            new_xyz, new_rotations, factors = deform.step(
-                gaussians,
-                revolute,
-            )
 
-        # Render
-        # deform frame
+            # -------------------- deformation --------------------------
+
+            new_xyz, new_rotations, factors = deform.step(gaussians, revolute)
 
         # ---------------------- render --------------------------
         loss_start = 0.0
@@ -273,26 +274,25 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         #     iter_counter += 1
 
         # ---------------- output mid results -------------------------------
-        if (
-            6400 <= iteration < 6450
-            or 22000 <= iteration < 22050
-            or 34800 <= iteration < 34850
-        ):
+        if 6400 <= iteration < 6450:
             image_np = image_start.detach().cpu().numpy().transpose((1, 2, 0))
             img = Image.fromarray(np.uint8(image_np * 255), "RGB")
             save_path = os.path.join(
                 os.getcwd(), f"rendered_img/static_{iteration}.png"
             )
             img.save(save_path, "PNG")
+        if (32800 <= iteration < 32850) or (34800 <= iteration < 34850):
+            for status in ["start", "end"]:
+                image = image_start if status == "start" else image_end
+                image_np = image.detach().cpu().numpy().transpose((1, 2, 0))
+                img = Image.fromarray(np.uint8(image_np * 255), "RGB")
+                save_path = os.path.join(
+                    os.getcwd(), f"rendered_img/{iteration}_{status}.png"
+                )
+                img.save(save_path, "PNG")
 
         # Loss
         # ---------------- record loss (TODO:delete) --------------------------
-        # if (start == opt.pretrain) and (iteration >= (end - 200)):
-        # loss_end.backward(retain_graph=True)
-        # grads["opacity"].append(gaussians._opacity.grad.detach().cpu().clone())
-        # grads["scaling"].append(gaussians._scaling.grad.detach().cpu().clone())
-        # grads["xyz"].append(gaussians._xyz.grad.detach().cpu().clone())
-        # grads["rotation"].append(gaussians._rotation.grad.detach().cpu().clone())
 
         # revolute.theta_optimizer.zero_grad()
         # revolute.axis_pivot_optimizer.zero_grad()
@@ -300,8 +300,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         # deform.optimizer.zero_grad()
 
         loss = loss_end + loss_start
-        # loss_end.backward()
         loss.backward()
+
+        # if (start == opt.pretrain) and (iteration >= opt.pretrain):
+        #     grads["opacity"].append(gaussians._opacity.grad.detach().cpu().clone())
+        #     grads["scaling"].append(gaussians._scaling.grad.detach().cpu().clone())
+        #     grads["xyz"].append(gaussians._xyz.grad.detach().cpu().clone())
+        #     grads["rotation"].append(gaussians._rotation.grad.detach().cpu().clone())
 
         iter_end.record()
 
@@ -375,31 +380,36 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 ):
                     gaussians.reset_opacity()
 
-            # --------- change mask -----------------
-            # if opt.pretrain < iteration < opt.update_mask:
-            #     if iteration % opt.update_mask_interval == 0:
-            #         grads = gaussians._xyz.grad
+                # --------- change mask -----------------
+                # if opt.pretrain < iteration < opt.update_mask:
+                #     if iteration % opt.update_mask_interval == 0:
+                #         grads = gaussians._xyz.grad
 
-            # ----------------------------------------
+                # ----------------------------------------
 
-            if opt.only_train_single_frame < iteration < opt.pretrain:
-                deform.optimizer.step()
-                deform.optimizer.zero_grad()
-                deform.update_learning_rate(iteration)
+                if opt.only_train_single_frame < iteration < opt.pretrain:
+                    deform.optimizer.step()
+                    deform.optimizer.zero_grad()
+                    deform.update_learning_rate(iteration)
 
-            if opt.only_train_single_frame < iteration < opt.update_mask:
-                revolute.axis_pivot_optimizer.step()
+                if opt.only_train_single_frame < iteration < opt.update_mask:
+                    revolute.axis_pivot_optimizer.step()
+                    revolute.axis_pivot_optimizer.zero_grad()
+                    revolute.axis_pivot_scheduler.step()
+
+                if opt.pretrain < iteration < opt.update_mask:
+                    revolute.theta_optimizer.step()
+                    revolute.theta_optimizer.zero_grad()
+                    revolute.theta_scheduler.step()
+
+                if iteration < opt.update_mask:
+                    gaussians.optimizer.step()
+                    gaussians.update_learning_rate(iteration)
+                    gaussians.optimizer.zero_grad(set_to_none=True)
+
+            else:
                 revolute.axis_pivot_optimizer.zero_grad()
-                revolute.axis_pivot_scheduler.step()
-
-            if opt.pretrain < iteration < opt.update_mask:
-                revolute.theta_optimizer.step()
                 revolute.theta_optimizer.zero_grad()
-                revolute.theta_scheduler.step()
-
-            if iteration < opt.update_mask:
-                gaussians.optimizer.step()
-                gaussians.update_learning_rate(iteration)
                 gaussians.optimizer.zero_grad(set_to_none=True)
 
     print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
@@ -548,6 +558,10 @@ def training_report(
         torch.cuda.empty_cache()
 
     return test_psnr
+
+
+def obtain_end_grad():
+    pass
 
 
 if __name__ == "__main__":
