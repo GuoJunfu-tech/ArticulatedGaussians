@@ -560,12 +560,14 @@ def training_report(
 ):
     if tb_writer:
         if isinstance(m_loss, float):
-            tb_writer.add_scalar("train_loss_patches/u_loss", u_loss.item(), iteration)
-            tb_writer.add_scalar("iter_time", elapsed, iteration)
-            tb_writer.add_histogram("scene/opacity_histogram", opacity, iteration)
-            tb_writer.add_scalar("total_points", gs_num, iteration)
+            tb_writer.add_scalar("train_loss_patches/m_loss", m_loss, iteration)
         else:
-            tb_writer.add_scalar("train_loss_patches/m_loss", m_loss(), iteration)
+            tb_writer.add_scalar("train_loss_patches/m_loss", m_loss.item(), iteration)
+
+        tb_writer.add_scalar("train_loss_patches/u_loss", u_loss.item(), iteration)
+        tb_writer.add_scalar("iter_time", elapsed, iteration)
+        tb_writer.add_histogram("scene/opacity_histogram", opacity, iteration)
+        tb_writer.add_scalar("total_points", gs_num, iteration)
 
 
 if __name__ == "__main__":
