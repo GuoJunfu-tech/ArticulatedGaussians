@@ -20,11 +20,8 @@ import dill as pickle
 import torch
 from tqdm import tqdm
 import uuid
-import copy
 
-from utils.loss_utils import (
-    ll1_ssim_loss,
-)
+from utils.loss_utils import ll1_ssim_loss, l1_loss
 from gaussian_renderer import render, network_gui
 from scene import Scene, GaussianModel, DeformModel, Revolute
 from utils.general_utils import safe_state, get_linear_noise_func
@@ -45,21 +42,18 @@ except ImportError:
 def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
-    # deform = DeformModel(dataset.is_blender, dataset.is_6dof)
-    deform = DeformModel()
-    deform.train_setting(opt)
+    deform = DeformModel(opt)
     revolute = Revolute()
 
     scene_start = Scene(dataset, gaussians, status="start")
     scene_end = Scene(dataset, gaussians, status="end")
     viewpoint_loader = ViewpointLoader(scene_start, scene_end)
-
     gaussians.training_setup(opt)
+
     bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
     iter_start = torch.cuda.Event(enable_timing=True)
     iter_end = torch.cuda.Event(enable_timing=True)
-    ema_loss_for_log = 0.0
     best_psnr = 0.0
     best_iteration = 0
     progress_bar = tqdm(range(opt.iterations), desc="Training progress")
@@ -67,9 +61,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         lr_init=0.1, lr_final=1e-15, lr_delay_mult=0.01, max_steps=20000
     )
 
-    grads = {"xyz": [], "rotation": [], "opacity": [], "scaling": []}
     mask = None
-
     # start = opt.pretrain
     start = 1
     # end = opt.pretrain
@@ -103,13 +95,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             print(
                 f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
             )
-            print(f"movable factors:")
-            #     #     factors = deform.movable_network(gaussians.get_xyz)
-            #     # move_parts = factors[factors > 0.8].shape[0]
-            #     # print(mask)
-            #     # move_parts = mask.sum()
-            #     # print(f"move parts: {move_parts}, factors: {mask.shape[0]}")
-
             if end == opt.update_mask:
                 # with open("grads.pkl", "wb") as f:
                 #     grads["gaussians"] = gaussians
@@ -150,6 +135,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             with open("./stage_3.pkl", "wb") as f:
                 pickle.dump(data, f)
                 print("data saved")
+
+            print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
 
             exit()
 
@@ -292,13 +279,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 img.save(save_path, "PNG")
 
         # Loss
-        # ---------------- record loss (TODO:delete) --------------------------
-
-        # revolute.theta_optimizer.zero_grad()
-        # revolute.axis_pivot_optimizer.zero_grad()
-        # gaussians.optimizer.zero_grad(set_to_none=True)
-        # deform.optimizer.zero_grad()
-
         loss = loss_end + loss_start
         loss.backward()
 
@@ -313,15 +293,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         if dataset.load2gpu_on_the_fly:
             viewpoint_cam_end.load2device("cpu")
 
-        # ---------------------- update --------------------------
         with torch.no_grad():
-            # Progress bar
-            # ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
+            # ---------------------- progress bar -----------------------------
             if iteration % 10 == 0:
-                sp_loss = 0
                 progress_bar.set_postfix(
                     {
-                        # "Loss_total": f"{ema_loss_for_log:.{7}f}",
                         "move_loss": f"{loss_end:.{7}f}",
                         "unmove_loss": f"{loss_start:.{7}f}",
                     }
@@ -330,6 +306,37 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             if iteration == opt.iterations:
                 progress_bar.close()
 
+            # ---------------------- training report -----------------------------
+            training_report(
+                tb_writer,
+                iteration,
+                iter_start.elapsed_time(iter_end),
+                loss_start,
+                loss_end,
+                gaussians.get_xyz.shape[0],
+                gaussians.get_opacity,
+            )
+            if iteration in testing_iterations:
+                is_first_test = True if iteration == testing_iterations[0] else False
+                cur_psnr = eval(
+                    iteration,
+                    scene_start,
+                    scene_end,
+                    gaussians,
+                    revolute,
+                    render,
+                    (pipe, background),
+                    deform,
+                    tb_writer,
+                    dataset.load2gpu_on_the_fly,
+                    is_first_test,
+                )
+
+                if cur_psnr > best_psnr:
+                    best_psnr = cur_psnr
+                    best_iteration = iteration
+
+            # --------------------- Densification --------------------------
             # Keep track of max radii in image-space for pruning
             if opt.only_train_single_frame < iteration < opt.update_mask:
                 gaussians.max_radii2D[visibility_filter_end] = torch.max(
@@ -340,6 +347,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     viewspace_point_tensor_end, visibility_filter_end
                 )
 
+                # FIXME sick code! should update together!!
+
+                # if iteration in saving_iterations:
+                #     print("\n[ITER {}] Saving Gaussians".format(iteration))
+                #     scene.save(iteration)
+                #     deform.save_weights(args.model_path, iteration)
+
             if iteration < opt.update_mask:
                 gaussians.max_radii2D[visibility_filter_start] = torch.max(
                     gaussians.max_radii2D[visibility_filter_start],
@@ -349,16 +363,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 gaussians.add_densification_stats(
                     viewspace_point_tensor_start, visibility_filter_start
                 )
-                # FIXME sick code! should update together!!
-
-                # if iteration in saving_iterations:
-                #     print("\n[ITER {}] Saving Gaussians".format(iteration))
-                #     scene.save(iteration)
-                #     deform.save_weights(args.model_path, iteration)
-
-                # Optimizer step
-
-                # --------------------- Densification --------------------------
 
                 if (
                     iteration > opt.densify_from_iter
@@ -380,12 +384,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 ):
                     gaussians.reset_opacity()
 
-                # --------- change mask -----------------
-                # if opt.pretrain < iteration < opt.update_mask:
-                #     if iteration % opt.update_mask_interval == 0:
-                #         grads = gaussians._xyz.grad
-
-                # ----------------------------------------
+                # --------------- optimization -------------------------
 
                 if opt.only_train_single_frame < iteration < opt.pretrain:
                     deform.optimizer.step()
@@ -406,13 +405,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     gaussians.optimizer.step()
                     gaussians.update_learning_rate(iteration)
                     gaussians.optimizer.zero_grad(set_to_none=True)
-
-            else:
-                revolute.axis_pivot_optimizer.zero_grad()
-                revolute.theta_optimizer.zero_grad()
-                gaussians.optimizer.zero_grad(set_to_none=True)
-
-    print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
 
 
 def prepare_output_and_logger(args):
@@ -439,6 +431,9 @@ def prepare_output_and_logger(args):
 
 
 def vis(image):
+    """TODO delete in the future
+    this func is to visualize the mid results
+    """
     from PIL import Image
 
     image_np = image.detach().cpu().numpy().transpose((1, 2, 0))
@@ -446,29 +441,24 @@ def vis(image):
     img.show()
 
 
-def training_report(
-    tb_writer,
+def eval(
     iteration,
-    Ll1,
-    loss,
-    l1_loss,
-    elapsed,
-    testing_iterations,
-    scene: Scene,
+    scene_start,
+    scene_end,
+    gaussians,
+    arti_params,
     renderFunc,
     renderArgs,
     deform,
+    tb_writer,
     load2gpu_on_the_fly,
-    is_6dof=False,
+    is_first_test=False,
 ):
-    if tb_writer:
-        tb_writer.add_scalar("train_loss_patches/l1_loss", Ll1.item(), iteration)
-        tb_writer.add_scalar("train_loss_patches/total_loss", loss.item(), iteration)
-        tb_writer.add_scalar("iter_time", elapsed, iteration)
-
     test_psnr = 0.0
     # Report test and samples of training set
-    if iteration in testing_iterations:
+    l1_test, psnr_test = 0.0, 0.0
+    for status in ["start", "end"]:
+        scene = scene_start if status == "start" else scene_end
         torch.cuda.empty_cache()
         validation_configs = (
             {"name": "test", "cameras": scene.getTestCameras()},
@@ -488,19 +478,22 @@ def training_report(
                 for idx, viewpoint in enumerate(config["cameras"]):
                     if load2gpu_on_the_fly:
                         viewpoint.load2device()
-                    fid = viewpoint.fid
-                    xyz = scene.gaussians.get_xyz
-                    time_input = fid.unsqueeze(0).expand(xyz.shape[0], -1)
-                    d_xyz, d_rotation, d_scaling = deform.step(xyz.detach(), time_input)
+                    # fid = viewpoint.fid
+                    # xyz = gaussians.get_xyz
+                    # time_input = fid.unsqueeze(0).expand(xyz.shape[0], -1)
+
+                    if status == "end":
+                        xyz, rotation, _ = deform.step(gaussians, arti_params)
+                    else:
+                        xyz, rotation = gaussians.get_xyz, gaussians.get_rotation
+
                     image = torch.clamp(
                         renderFunc(
                             viewpoint,
-                            scene.gaussians,
+                            gaussians,
                             *renderArgs,
-                            d_xyz,
-                            d_rotation,
-                            d_scaling,
-                            is_6dof,
+                            xyz,
+                            rotation,
                         )["render"],
                         0.0,
                         1.0,
@@ -516,52 +509,63 @@ def training_report(
                     if tb_writer and (idx < 5):
                         tb_writer.add_images(
                             config["name"]
-                            + "_view_{}/render".format(viewpoint.image_name),
+                            + f"_view_{viewpoint.image_name}_{status}/render",
                             image[None],
                             global_step=iteration,
                         )
-                        if iteration == testing_iterations[0]:
+                        if is_first_test:
                             tb_writer.add_images(
                                 config["name"]
-                                + "_view_{}/ground_truth".format(viewpoint.image_name),
+                                + f"_view_{viewpoint.image_name}_{status}/ground_truth",
                                 gt_image[None],
                                 global_step=iteration,
                             )
 
-                l1_test = l1_loss(images, gts)
-                psnr_test = psnr(images, gts).mean()
-                if (
-                    config["name"] == "test"
-                    or len(validation_configs[0]["cameras"]) == 0
-                ):
-                    test_psnr = psnr_test
-                print(
-                    "\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(
-                        iteration, config["name"], l1_test, psnr_test
-                    )
+                l1_test += l1_loss(images, gts)
+                psnr_test += psnr(images, gts).mean()
+
+            l1_test = l1_test / 2.0
+            psnr_test = psnr_test / 2.0
+
+            if config["name"] == "test" or len(validation_configs[0]["cameras"]) == 0:
+                test_psnr = psnr_test
+            print(
+                "\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(
+                    iteration, config["name"], l1_test, psnr_test
                 )
-                if tb_writer:
-                    tb_writer.add_scalar(
-                        config["name"] + "/loss_viewpoint - l1_loss", l1_test, iteration
-                    )
-                    tb_writer.add_scalar(
-                        config["name"] + "/loss_viewpoint - psnr", psnr_test, iteration
-                    )
-
-        if tb_writer:
-            tb_writer.add_histogram(
-                "scene/opacity_histogram", scene.gaussians.get_opacity, iteration
             )
-            tb_writer.add_scalar(
-                "total_points", scene.gaussians.get_xyz.shape[0], iteration
-            )
-        torch.cuda.empty_cache()
-
+            # if tb_writer:
+            #     tb_writer.add_scalar(
+            #         config["name"] + "/loss_viewpoint - l1_loss",
+            #         l1_test,
+            #         iteration,
+            #     )
+            #     tb_writer.add_scalar(
+            #         config["name"] + "/loss_viewpoint - psnr",
+            #         psnr_test,
+            #         iteration,
+            #     )
+    torch.cuda.empty_cache()
     return test_psnr
 
 
-def obtain_end_grad():
-    pass
+def training_report(
+    tb_writer,
+    iteration,
+    elapsed,
+    u_loss,
+    m_loss,
+    gs_num,
+    opacity,
+):
+    if tb_writer:
+        if isinstance(m_loss, float):
+            tb_writer.add_scalar("train_loss_patches/u_loss", u_loss.item(), iteration)
+            tb_writer.add_scalar("iter_time", elapsed, iteration)
+            tb_writer.add_histogram("scene/opacity_histogram", opacity, iteration)
+            tb_writer.add_scalar("total_points", gs_num, iteration)
+        else:
+            tb_writer.add_scalar("train_loss_patches/m_loss", m_loss(), iteration)
 
 
 if __name__ == "__main__":
@@ -577,7 +581,7 @@ if __name__ == "__main__":
         "--test_iterations",
         nargs="+",
         type=int,
-        default=[5000, 6000, 7_000] + list(range(10000, 40001, 1000)),
+        default=[5000, 15000, 28000, 34000],
     )
     parser.add_argument(
         "--save_iterations",

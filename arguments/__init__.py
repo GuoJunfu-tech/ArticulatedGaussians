@@ -109,11 +109,8 @@ class OptimizationParams(ParamGroup):
 
         self.only_train_single_frame = 4_500
         self.pretrain = 30_000
-        self.xyz_num_freeze = 33_000
         self.update_mask = 35_000
-        # self.inverse_deform_interval = 500
-        self.only_train_end_frame_interval = 30
-        self.only_train_end_frame = 500
+
         super().__init__(parser, "Optimization Parameters")
 
 

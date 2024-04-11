@@ -381,11 +381,12 @@ def readArticulatedSyntheticInfo(
     )
     print("Reading Test Transforms")
 
-    # TODO no transforms_test.json yet
-    # test_cam_infos = readCamerasFromTransforms(
-    #     path, "transforms_test.json", white_background, extension)
-
-    test_cam_infos = []
+    try:
+        test_cam_infos = readCamerasFromArticulatedTransforms(
+            path, "camera_test.json", white_background, extension
+        )
+    except:
+        test_cam_infos = []
 
     if not eval:
         train_cam_infos.extend(test_cam_infos)

@@ -10,12 +10,30 @@ import math
 
 
 class DeformModel:
-    def __init__(self) -> None:
+    def __init__(self, training_args) -> None:
         self.optimizer = None
         self.movable_network = MovableNetwork().cuda()
         self.optimizer = None
         self.spatial_lr_scale = 5
         self.deform_operator = RotationOperator()
+        self.train_setting(training_args)
+
+    def train_setting(self, training_args):
+        l = [
+            {
+                "params": list(self.movable_network.parameters()),
+                "lr": training_args.movable_lr_init,
+                "name": "movable",
+            }
+        ]
+        self.optimizer = torch.optim.Adam(l, lr=0.0, eps=2e-15)
+
+        self.deform_scheduler_args = get_expon_lr_func(
+            lr_init=training_args.movable_lr_init,
+            lr_final=training_args.movable_lr_final,
+            lr_delay_mult=training_args.movable_lr_delay_mult,
+            max_steps=training_args.deform_lr_max_steps,
+        )
 
     def step(self, gaussians, revolute, keep_gs_grad=False):
         return self.deform(
@@ -68,23 +86,6 @@ class DeformModel:
         # new_xyz = xyz + movable_factor * (moved_xyz - xyz)
         new_rotations = moved_quaternion
         return new_xyz, new_rotations, movable_factor
-
-    def train_setting(self, training_args):
-        l = [
-            {
-                "params": list(self.movable_network.parameters()),
-                "lr": training_args.movable_lr_init,
-                "name": "movable",
-            }
-        ]
-        self.optimizer = torch.optim.Adam(l, lr=0.0, eps=2e-15)
-
-        self.deform_scheduler_args = get_expon_lr_func(
-            lr_init=training_args.movable_lr_init,
-            lr_final=training_args.movable_lr_final,
-            lr_delay_mult=training_args.movable_lr_delay_mult,
-            max_steps=training_args.deform_lr_max_steps,
-        )
 
     def save_weights(self, model_path, iteration):
         out_weights_path = os.path.join(
