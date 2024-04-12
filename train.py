@@ -521,19 +521,19 @@ def eval(
                                 global_step=iteration,
                             )
 
-                l1_test += l1_loss(images, gts)
-                psnr_test += psnr(images, gts).mean()
+                l1_test = l1_loss(images, gts)
+                psnr_test = psnr(images, gts).mean()
 
-            l1_test = l1_test / 2.0
-            psnr_test = psnr_test / 2.0
-
-            if config["name"] == "test" or len(validation_configs[0]["cameras"]) == 0:
-                test_psnr = psnr_test
-            print(
-                "\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(
-                    iteration, config["name"], l1_test, psnr_test
+                if (
+                    config["name"] == "test"
+                    or len(validation_configs[0]["cameras"]) == 0
+                ):
+                    test_psnr = psnr_test
+                print(
+                    "\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(
+                        iteration, config["name"], l1_test, psnr_test
+                    )
                 )
-            )
             # if tb_writer:
             #     tb_writer.add_scalar(
             #         config["name"] + "/loss_viewpoint - l1_loss",
