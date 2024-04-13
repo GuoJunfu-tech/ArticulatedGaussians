@@ -2,6 +2,8 @@ import dill as pickle
 import torch
 from scene import Scene, GaussianModel, DeformModel, Revolute
 from arguments import ModelParams, PipelineParams, OptimizationParams
+import matplotlib.pyplot as plt
+from mayavi import mlab
 import numpy as np
 import open3d as o3d
 from PIL import Image
@@ -149,12 +151,69 @@ def get_grad_pcd(xyz, grad, dx=0.0):
     return pcd_grad
 
 
-if __name__ == "__main__":
-    # with open("./load_data/stage_3.pkl", "rb") as f:
-    #     # with open("./final_params.pkl", "rb") as f:
-    #     data = pickle.load(f)
+def test_maya():
+    # 假设我们有上万个椭球的数据，这里我们用随机数据来模拟
+    # 每个椭球由其中心点和三个轴的长度表示
+    num_ellipses = 10000
+    centers = torch.rand(num_ellipses, 3)
+    axis = torch.rand(num_ellipses, 3) * 2
 
-    # gaussians = data["gaussians"]
+    x, y, z = centers.T
+    sx, sy, sz = axis.T
+    scale_factors = np.ones(1000)
+
+    # 创建点云
+    pts = mlab.points3d(
+        x,
+        y,
+        z,
+        scale_factor=0.01,
+        scale_mode="none",
+        resolution=8,
+        color=(0.5, 0.5, 1.0),
+        opacity=0.6,
+        mode="sphere",
+    )
+
+    # 批量设置椭球缩放
+    pts.mlab_source.dataset.point_data.vectors = np.column_stack((sx, sy, sz))
+    pts.mlab_source.dataset.point_data.vectors.name = "scale_vectors"
+    pts.glyph.scale_mode = "scale_by_vector"
+    # for i in sample_indices:
+    #     center = centers[i]
+    #     major_axis = major_axes[i]
+    #     minor_axis = minor_axes[i]
+
+    #     # 绘制椭球
+    #     x, y, z = center
+    #     sx, sy, sz = minor_axis
+    #     mlab.points3d(
+    #         x,
+    #         y,
+    #         z,
+    #         scale_mode="none",
+    #         scale_factor=0.1,
+    #         color=(0.5, 0.5, 1.0),
+    #         resolution=5,
+    #         opacity=0.1,
+    #         mode="sphere",
+    #     ).actor.actor.scale = [sx, sy, sz]
+
+    # 设置视角
+    mlab.view(azimuth=123, elevation=23, distance=7, focalpoint=(0, 0, 0))
+
+    # 显示图像
+    mlab.show()
+
+
+if __name__ == "__main__":
+    test_maya()
+    exit()
+    with open("./load_data/sci.pkl", "rb") as f:
+        # with open("./final_params.pkl", "rb") as f:
+        data = pickle.load(f)
+
+    gaussians = data["gaussians"]
     # # factors = data["factor"].detach().cpu().numpy()
     # factors = gaussians._movable_mask.detach().cpu().numpy()
 
@@ -164,33 +223,36 @@ if __name__ == "__main__":
     # with open("./load_data/stage_3.pkl", "rb") as f:
     #     # with open("./final_params.pkl", "rb") as f:
     #     data = pickle.load(f)
-    with open("./load_data/grads.pkl", "rb") as f:
-        grads = pickle.load(f)
+    # with open("./load_data/grads.pkl", "rb") as f:
+    #     grads = pickle.load(f)
 
-    gaussians = grads["gaussians"]
+    # gaussians = grads["gaussians"]
     # factors = data["factor"].detach().cpu().numpy()
     factors = gaussians._movable_mask.detach().cpu().numpy()
 
     xyz = gaussians.get_xyz.detach().cpu().numpy()
-    pcd_2 = draw_one_color(xyz, factors, dx=1)
+    pcd_2 = draw_one_color(
+        xyz,
+        factors,
+    )
 
     # # mask = gaussians.get_movable_mask.detach().cpu().numpy()
 
-    xyz_grads = grads["xyz"]
-    print(len(xyz_grads))
-    grad = 0.0
-    for id, xyz_grad in enumerate(xyz_grads):
-        if id == 90:
-            break
-        g = torch.norm(xyz_grad, dim=-1, keepdim=True).numpy()
-        grad += g.squeeze()
-    # grad = torch.norm(xyz_grads[-3], dim=-1, keepdim=True).numpy()
-    print(max(grad), min(grad))
-    factor = grad > 5e-3
+    # xyz_grads = grads["xyz"]
+    # print(len(xyz_grads))
+    # grad = 0.0
+    # for id, xyz_grad in enumerate(xyz_grads):
+    #     if id == 90:
+    #         break
+    #     g = torch.norm(xyz_grad, dim=-1, keepdim=True).numpy()
+    #     grad += g.squeeze()
+    # # grad = torch.norm(xyz_grads[-3], dim=-1, keepdim=True).numpy()
+    # print(max(grad), min(grad))
+    # factor = grad > 5e-3
 
-    pcd_1 = draw_one_color(xyz, factor)
+    # pcd_1 = draw_one_color(xyz, factor)
 
-    o3d.visualization.draw_geometries([pcd_1, pcd_2])
+    o3d.visualization.draw_geometries([pcd_2])
     # visualize(xyz, factors)
     # print(xyz_grads[1:10])
     # grad_1 = np.zeros_like(factors.detach().cpu())

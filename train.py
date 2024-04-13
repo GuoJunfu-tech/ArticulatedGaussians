@@ -40,7 +40,10 @@ except ImportError:
 
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations):
-    tb_writer = prepare_output_and_logger(dataset)
+    if opt.tb_writer:
+        tb_writer = prepare_output_and_logger(dataset)
+    else:
+        tb_writer = False
     gaussians = GaussianModel(dataset.sh_degree)
     deform = DeformModel(opt)
     revolute = Revolute()
@@ -156,6 +159,20 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             print(
                 f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
             )
+            data = {
+                "gaussians": gaussians,
+                "factor": factors,
+                "deformModel": deform,
+                "params": {
+                    "axis": revolute.axis.tolist(),
+                    "pivot": revolute.pivot.tolist(),
+                },
+            }
+
+            with open("./stage_2.pkl", "wb") as f:
+                pickle.dump(data, f)
+                print(" stage 2 data saved")
+
             mask, centers = build_mask(factors.detach().cpu().numpy())
             gaussians.initialize_mask(np.array(mask))
             revolute.reset_param_optimizer()
@@ -268,7 +285,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 os.getcwd(), f"rendered_img/static_{iteration}.png"
             )
             img.save(save_path, "PNG")
-        if (32800 <= iteration < 32850) or (34800 <= iteration < 34850):
+        if (
+            (20000 <= iteration < 20050)
+            or (32800 <= iteration < 32850)
+            or (34800 <= iteration < 34850)
+        ):
             for status in ["start", "end"]:
                 image = image_start if status == "start" else image_end
                 image_np = image.detach().cpu().numpy().transpose((1, 2, 0))
@@ -279,7 +300,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 img.save(save_path, "PNG")
 
         # Loss
-        loss = loss_end + loss_start
+        # if iteration < opt.only_train_single_frame:
+        #     dist_loss = 0.0
+        # else:
+        #     dist_loss = pivot_loss(revolute.pivot, gaussians.get_xyz)
+
+        loss = loss_end + loss_start  # + dist_loss
         loss.backward()
 
         # if (start == opt.pretrain) and (iteration >= opt.pretrain):
@@ -298,8 +324,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             if iteration % 10 == 0:
                 progress_bar.set_postfix(
                     {
-                        "move_loss": f"{loss_end:.{7}f}",
-                        "unmove_loss": f"{loss_start:.{7}f}",
+                        "m_l": f"{loss_end:.{7}f}",
+                        "u_l": f"{loss_start:.{7}f}",
+                        # "d_l": f"{dist_loss:.{7}f}",
                     }
                 )
                 progress_bar.update(10)
@@ -307,34 +334,39 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 progress_bar.close()
 
             # ---------------------- training report -----------------------------
-            training_report(
-                tb_writer,
-                iteration,
-                iter_start.elapsed_time(iter_end),
-                loss_start,
-                loss_end,
-                gaussians.get_xyz.shape[0],
-                gaussians.get_opacity,
-            )
-            if iteration in testing_iterations:
-                is_first_test = True if iteration == testing_iterations[0] else False
-                cur_psnr = eval(
-                    iteration,
-                    scene_start,
-                    scene_end,
-                    gaussians,
-                    revolute,
-                    render,
-                    (pipe, background),
-                    deform,
+            if opt.tb_writer and (iteration % opt.report_interval == 0):
+                training_report(
                     tb_writer,
-                    dataset.load2gpu_on_the_fly,
-                    is_first_test,
+                    iteration,
+                    iter_start.elapsed_time(iter_end),
+                    loss_start,
+                    loss_end,
+                    gaussians.get_xyz.shape[0],
+                    gaussians.get_opacity,
+                    revolute,
                 )
+            if opt.is_eval:
+                if iteration in testing_iterations:
+                    is_first_test = (
+                        True if iteration == testing_iterations[0] else False
+                    )
+                    cur_psnr = eval(
+                        iteration,
+                        scene_start,
+                        scene_end,
+                        gaussians,
+                        revolute,
+                        render,
+                        (pipe, background),
+                        deform,
+                        tb_writer,
+                        dataset.load2gpu_on_the_fly,
+                        is_first_test,
+                    )
 
-                if cur_psnr > best_psnr:
-                    best_psnr = cur_psnr
-                    best_iteration = iteration
+                    if cur_psnr > best_psnr:
+                        best_psnr = cur_psnr
+                        best_iteration = iteration
 
             # --------------------- Densification --------------------------
             # Keep track of max radii in image-space for pruning
@@ -557,6 +589,7 @@ def training_report(
     m_loss,
     gs_num,
     opacity,
+    revolute,
 ):
     if tb_writer:
         if isinstance(m_loss, float):
@@ -568,6 +601,14 @@ def training_report(
         tb_writer.add_scalar("iter_time", elapsed, iteration)
         tb_writer.add_histogram("scene/opacity_histogram", opacity, iteration)
         tb_writer.add_scalar("total_points", gs_num, iteration)
+
+        for i in range(3):
+            tb_writer.add_scalar(
+                "revolute/axis_{}".format(i), revolute.axis[i], iteration
+            )
+            tb_writer.add_scalar(
+                "revolute/pivot_{}".format(i), revolute.pivot[i], iteration
+            )
 
 
 if __name__ == "__main__":
@@ -583,7 +624,7 @@ if __name__ == "__main__":
         "--test_iterations",
         nargs="+",
         type=int,
-        default=[5000, 15000, 28000, 34000],
+        default=[5000, 10000, 15000, 20000, 28000, 34000],
     )
     parser.add_argument(
         "--save_iterations",
