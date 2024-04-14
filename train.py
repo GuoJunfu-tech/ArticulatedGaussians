@@ -202,7 +202,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 background,
                 type="gif",
             )
-            exit()
             continue
 
         if iteration < opt.only_train_single_frame:
@@ -230,7 +229,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
         # ---------------------- render --------------------------
         loss_start = 0.0
-        if iteration < opt.only_train_single_frame:
+        if (iteration < opt.only_train_single_frame) or (iteration > opt.update_params):
             # or (iter_counter < opt.update_mask_interval / 2):
             render_pkg_re = render(
                 viewpoint_cam_start,
@@ -434,7 +433,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     revolute.theta_optimizer.zero_grad()
                     revolute.theta_scheduler.step()
 
-            if iteration < opt.only_train_single_frame:
+            if (iteration < opt.only_train_single_frame) or (
+                iteration > opt.update_params
+            ):
                 gaussians.optimizer.step()
                 gaussians.update_learning_rate(iteration)
                 gaussians.optimizer.zero_grad(set_to_none=True)

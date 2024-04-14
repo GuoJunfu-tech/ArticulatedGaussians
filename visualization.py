@@ -209,19 +209,20 @@ def test_maya():
     # 显示图像
     mlab.show()
 
-    def vis_maya(xyz, rotations, scaling, opacities, factors):
-        centers = xyz
-        axis = scaling
 
-    def quaternion_to_rotation_matrix(q):
-        w, x, y, z = q
-        return np.array(
-            [
-                [1 - 2 * y**2 - 2 * z**2, 2 * x * y - 2 * z * w, 2 * x * z + 2 * y * w],
-                [2 * x * y + 2 * z * w, 1 - 2 * x**2 - 2 * z**2, 2 * y * z - 2 * x * w],
-                [2 * x * z - 2 * y * w, 2 * y * z + 2 * x * w, 1 - 2 * x**2 - 2 * y**2],
-            ]
-        )
+def draw_axis(pivot, axis):
+    axis = axis / np.linalg.norm(axis)
+    end_point = pivot + axis
+    points = np.vstack([pivot, end_point])
+    lines = [[0, 1]]
+    colors = np.array([[1, 0, 0]], dtype=np.float64)
+
+    line_set = o3d.geometry.LineSet(
+        points=o3d.utility.Vector3dVector(points),
+        lines=o3d.utility.Vector2iVector(lines),
+    )
+    line_set.colors = o3d.utility.Vector3dVector(colors)
+    return line_set
 
 
 if __name__ == "__main__":
@@ -247,4 +248,8 @@ if __name__ == "__main__":
 
     pcd_2 = draw_one_color(xyz, mask)
 
-    o3d.visualization.draw_geometries([pcd_2])
+    axis = np.array([0.00267, -0.0013, -1.61])
+    pivot = np.array([-0.31, 0.00012, -0.043])
+    line = draw_axis(pivot, axis)
+
+    o3d.visualization.draw_geometries([pcd_2, line])
