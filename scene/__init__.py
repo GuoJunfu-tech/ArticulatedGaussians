@@ -15,6 +15,7 @@ from scene.dataset_readers import sceneLoadTypeCallbacks
 from scene.gaussian_model import GaussianModel
 from scene.articulated_params import Revolute
 from scene.deformation_model import DeformModel
+from scene.deformGS import DeformGS
 
 # from scene.deform_model import DeformModel  # TODO delete this line
 from arguments import ModelParams

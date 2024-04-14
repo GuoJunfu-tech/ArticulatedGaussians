@@ -3,7 +3,8 @@ import torch
 from scene import Scene, GaussianModel, DeformModel, Revolute
 from arguments import ModelParams, PipelineParams, OptimizationParams
 import matplotlib.pyplot as plt
-from mayavi import mlab
+
+# from mayavi import mlab
 import numpy as np
 import open3d as o3d
 from PIL import Image
@@ -24,12 +25,12 @@ def draw_graph(xyz, factor):
     import seaborn as sns
 
     # 生成一些随机数据
-    data = factor.detach().cpu().numpy()
+    # data = factor.detach().cpu().numpy()
     print(max(data))
 
     # 绘制直方图
     plt.figure(figsize=(10, 6))
-    plt.hist(data, bins=30)
+    plt.hist(factor, bins=30)
     plt.title("Histogram")
 
     # # 绘制箱形图
@@ -106,13 +107,17 @@ def draw_one_color(xyz, filter, dx=0.0):
         new_xyz[:, 0] += dx
     pcd.points = o3d.utility.Vector3dVector(new_xyz)
 
-    colors = np.zeros((xyz.shape[0], 3))
-    print(filter.shape)
-    for id, is_vis in enumerate(filter):
-        if is_vis:
-            colors[id, :] = [1, 0, 0]
-        else:
-            colors[id, :] = [0, 0, 1]
+    # colors = np.zeros((xyz.shape[0], 3))
+    N = filter.shape[0]
+    red = np.tile([1, 0, 0], (N, 1))
+    blue = np.tile([0, 0, 1], (N, 1))
+    filter = filter.reshape(N, 1)
+    colors = filter * red + (1 - filter) * blue
+    # for id, is_vis in enumerate(filter):
+    #     if is_vis:
+    #         colors[id, :] = [1, 0, 0]
+    #     else:
+    #         colors[id, :] = [0, 0, 1]
 
     pcd.colors = o3d.utility.Vector3dVector(colors)
     # o3d.visualization.draw_geometries([pcd])
@@ -152,8 +157,6 @@ def get_grad_pcd(xyz, grad, dx=0.0):
 
 
 def test_maya():
-    # 假设我们有上万个椭球的数据，这里我们用随机数据来模拟
-    # 每个椭球由其中心点和三个轴的长度表示
     num_ellipses = 10000
     centers = torch.rand(num_ellipses, 3)
     axis = torch.rand(num_ellipses, 3) * 2
@@ -169,11 +172,12 @@ def test_maya():
         z,
         scale_factor=0.01,
         scale_mode="none",
-        resolution=8,
+        resolution=18,
         color=(0.5, 0.5, 1.0),
         opacity=0.6,
         mode="sphere",
     )
+    pts.actor.actor.scale = [1, 2, 3]
 
     # 批量设置椭球缩放
     pts.mlab_source.dataset.point_data.vectors = np.column_stack((sx, sy, sz))
@@ -205,73 +209,42 @@ def test_maya():
     # 显示图像
     mlab.show()
 
+    def vis_maya(xyz, rotations, scaling, opacities, factors):
+        centers = xyz
+        axis = scaling
+
+    def quaternion_to_rotation_matrix(q):
+        w, x, y, z = q
+        return np.array(
+            [
+                [1 - 2 * y**2 - 2 * z**2, 2 * x * y - 2 * z * w, 2 * x * z + 2 * y * w],
+                [2 * x * y + 2 * z * w, 1 - 2 * x**2 - 2 * z**2, 2 * y * z - 2 * x * w],
+                [2 * x * z - 2 * y * w, 2 * y * z + 2 * x * w, 1 - 2 * x**2 - 2 * y**2],
+            ]
+        )
+
 
 if __name__ == "__main__":
-    test_maya()
-    exit()
-    with open("./load_data/sci.pkl", "rb") as f:
+    with open("./load_data/sci_2.pkl", "rb") as f:
         # with open("./final_params.pkl", "rb") as f:
         data = pickle.load(f)
 
     gaussians = data["gaussians"]
-    # # factors = data["factor"].detach().cpu().numpy()
-    # factors = gaussians._movable_mask.detach().cpu().numpy()
-
-    # xyz = gaussians.get_xyz.detach().cpu().numpy()
-    # pcd_1 = draw_one_color(xyz, factors)
-
-    # with open("./load_data/stage_3.pkl", "rb") as f:
-    #     # with open("./final_params.pkl", "rb") as f:
-    #     data = pickle.load(f)
-    # with open("./load_data/grads.pkl", "rb") as f:
-    #     grads = pickle.load(f)
-
-    # gaussians = grads["gaussians"]
-    # factors = data["factor"].detach().cpu().numpy()
-    factors = gaussians._movable_mask.detach().cpu().numpy()
-
     xyz = gaussians.get_xyz.detach().cpu().numpy()
-    pcd_2 = draw_one_color(
-        xyz,
-        factors,
-    )
 
-    # # mask = gaussians.get_movable_mask.detach().cpu().numpy()
+    dx = data["dx"]
+    dr = data["dr"]
 
-    # xyz_grads = grads["xyz"]
-    # print(len(xyz_grads))
-    # grad = 0.0
-    # for id, xyz_grad in enumerate(xyz_grads):
-    #     if id == 90:
-    #         break
-    #     g = torch.norm(xyz_grad, dim=-1, keepdim=True).numpy()
-    #     grad += g.squeeze()
-    # # grad = torch.norm(xyz_grads[-3], dim=-1, keepdim=True).numpy()
-    # print(max(grad), min(grad))
-    # factor = grad > 5e-3
+    ndx = torch.norm(dx, dim=-1).detach().cpu().numpy()
+    ndr = torch.norm(dr, dim=-1).detach().cpu().numpy()
+    # factors = (ndr > 1e-2).to(torch.float32).to("cuda")
+    # mask = (ndr > 1e-2).to(gaussians.get_xyz.device, gaussians.get_xyz.dtype)
+    # print(mask)
+    draw_graph(xyz, ndr)
+    mask, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
 
-    # pcd_1 = draw_one_color(xyz, factor)
+    # factors = (ndx - min(ndx)) / (max(ndx) - min(ndx))
+
+    pcd_2 = draw_one_color(xyz, mask)
 
     o3d.visualization.draw_geometries([pcd_2])
-    # visualize(xyz, factors)
-    # print(xyz_grads[1:10])
-    # grad_1 = np.zeros_like(factors.detach().cpu())
-    # grad_2 = grad_1.copy()
-    # for id, xyz_grad in enumerate(xyz_grads):
-    #     g = torch.norm(xyz_grad, dim=-1, keepdim=True).numpy()
-    #     if id < 100:
-    #         grad_1 += g
-    #     else:
-    #         grad_2 += g
-
-    # print(max(grad), min(grad))
-    # print(grad)
-    # xyz_grad = grads["accu"][0].detach().cpu().numpy().squeeze()
-    # visualize(xyz, factors, grad)
-    # draw_two_grads(xyz, grad_1, grad_2)
-    # draw_graph(xyz, data["factors"])
-    # g_1 = grads["xyz"][0]
-    # g_2 = grads["xyz"][-1]
-
-    # print(torch.equal(g_1, g_2))
-    # print(grads["xyz"])

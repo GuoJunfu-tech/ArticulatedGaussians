@@ -23,7 +23,7 @@ import uuid
 
 from utils.loss_utils import ll1_ssim_loss, l1_loss
 from gaussian_renderer import render, network_gui
-from scene import Scene, GaussianModel, DeformModel, Revolute
+from scene import Scene, GaussianModel, DeformModel, Revolute, DeformGS
 from utils.general_utils import safe_state, get_linear_noise_func
 from utils.image_utils import psnr
 from utils.classification_utils import build_mask
@@ -45,7 +45,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     else:
         tb_writer = False
     gaussians = GaussianModel(dataset.sh_degree)
-    deform = DeformModel(opt)
+    deformGS = DeformGS()
+    deformGS.train_setting(opt)
+
+    deformArti = DeformModel(opt)
     revolute = Revolute()
 
     scene_start = Scene(dataset, gaussians, status="start")
@@ -65,21 +68,24 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     )
 
     mask = None
+    d_xyz = None
+    d_rotations = None  # TODO delete after code finish
     # start = opt.pretrain
     start = 1
     # end = opt.pretrain
     end = opt.update_mask
-    is_inverse = False
+
+    deform = None
     # is_end_frame_with_grad = False
     # grad_counter = 0
 
-    if start == opt.pretrain:
-        with open("./load_data/stage_2.pkl", "rb") as f:
-            data = pickle.load(f)
-        gaussians = data["gaussians"]
-        factors = data["factor"]
-        revolute_params = data["params"]
-        gaussians._movable_mask = None
+    # if start == opt.pretrain:
+    #     with open("./load_data/stage_2.pkl", "rb") as f:
+    #         data = pickle.load(f)
+    #     gaussians = data["gaussians"]
+    #     factors = data["factor"]
+    #     revolute_params = data["params"]
+    #     gaussians._movable_mask = None
 
     for iteration in range(start, end + 1):
         iter_start.record()
@@ -143,13 +149,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
             exit()
 
-        if iteration < opt.only_train_single_frame:
-            viewpoint_cam_start = viewpoint_loader.get_viewpoint_cam(
-                status="start", load2device=dataset.load2gpu_on_the_fly
-            )
-
-            new_xyz, new_rotations = None, None
-
         if opt.only_train_single_frame == iteration:
             print("[Training]::step 1 is over, now training deformation net")
             continue
@@ -159,72 +158,79 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             print(
                 f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
             )
-            data = {
-                "gaussians": gaussians,
-                "factor": factors,
-                "deformModel": deform,
-                "params": {
-                    "axis": revolute.axis.tolist(),
-                    "pivot": revolute.pivot.tolist(),
-                },
-            }
 
-            with open("./stage_2.pkl", "wb") as f:
-                pickle.dump(data, f)
-                print(" stage 2 data saved")
+            with torch.no_grad():
+                _, _, (d_xyz, d_rotations) = deformGS.step(gaussians)
+                ndr = torch.norm(d_rotations, dim=-1).detach().cpu().numpy()
+                # mask = (ndr > 1e-2).to(
+                #     gaussians.get_xyz.device, gaussians.get_xyz.dtype
+                # )
 
-            mask, centers = build_mask(factors.detach().cpu().numpy())
-            gaussians.initialize_mask(np.array(mask))
-            revolute.reset_param_optimizer()
+                mask, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
 
-            # revolute.set_theta(120 / 180 * math.pi)  # TODO delete
-            revolute.set_theta(centers[1].item() * math.pi)
+            # data = {
+            #     "gaussians": gaussians,
+            #     "dx": d_xyz,
+            #     "dr": d_rotations,
+            #     "deformModel": deform,
+            #     "params": {
+            #         "axis": revolute.axis.tolist(),
+            #         "pivot": revolute.pivot.tolist(),
+            #     },
+            # }
 
-            # if start == opt.pretrain:
-            # revolute.axis = revolute_params["axis"]
-            # revolute.pivot = revolute_params["pivot"]
-            # revolute.axis = [1.0, 0.0, 0.0]
-            # revolute.pivot = [0.0, 0.008, 0.012]
+            # with open("./stage_2.pkl", "wb") as f:
+            #     pickle.dump(data, f)
+            #     print(" stage 2 data saved")
 
+            gaussians.initialize_mask(mask)
+            revolute.set_theta(math.pi / 2)  # TODO delete
             continue
 
-        # ------------------- core: deformation ----------------------------
-        if opt.only_train_single_frame < iteration <= opt.update_mask:
+        if iteration == opt.update_params:
+            print("[Training]::step 3 is over, now update the articulated params")
+            print(
+                f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
+            )
+            render_results(
+                viewpoint_loader.get_cameras("start"),
+                gaussians,
+                deform,
+                revolute,
+                mask,
+                pipe,
+                background,
+                type="gif",
+            )
+            exit()
+            continue
+
+        if iteration < opt.only_train_single_frame:
+            viewpoint_cam_start = viewpoint_loader.get_viewpoint_cam(
+                status="start", load2device=dataset.load2gpu_on_the_fly
+            )
+            new_xyz, new_rotations = None, None
+        elif opt.only_train_single_frame < iteration < opt.update_params:
+            viewpoint_cam_end = viewpoint_loader.get_viewpoint_cam(
+                status="end", load2device=dataset.load2gpu_on_the_fly
+            )
+        elif opt.update_params < iteration < opt.update_mask:
             viewpoint_cam_start, viewpoint_cam_end = (
                 viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
             )
+        else:
+            raise ValueError
 
-            # ---------------- inverse training --------------------------
-            # if opt.pretrain < iteration < opt.update_mask:
-            #     if iteration % opt.inverse_deform_interval == 0:
-            #         is_inverse = not is_inverse
-            #         print(f"inverse is {is_inverse}")
-            #         with torch.no_grad():
-            #             new_xyz, new_rotations, factors = deform.step(
-            #                 gaussians,
-            #                 revolute,
-            #             )
-            #             if iteration < opt.pretrain:
-            #                 pass
-            #             else:
-            #                 revolute._theta.neg_()
-            #         gaussians.set_x_and_r(new_xyz, new_rotations)
+        # ------------------- core: deformation ----------------------------
 
-            #     if is_inverse:
-            #         viewpoint_cam_start, viewpoint_cam_end = (
-            #             viewpoint_cam_end,
-            #             viewpoint_cam_start,
-            #         )
-
-            # print(viewpoint_loader._current_fid)
-
-            # -------------------- deformation --------------------------
-
-            new_xyz, new_rotations, factors = deform.step(gaussians, revolute)
+        # before pretrain, we do not train the articulated params
+        if iteration > opt.only_train_single_frame:
+            deform = deformGS if iteration < opt.pretrain else deformArti
+            new_xyz, new_rotations, _ = deform.step(gaussians, revolute)
 
         # ---------------------- render --------------------------
         loss_start = 0.0
-        if iteration < opt.update_mask:
+        if iteration < opt.only_train_single_frame:
             # or (iter_counter < opt.update_mask_interval / 2):
             render_pkg_re = render(
                 viewpoint_cam_start,
@@ -278,34 +284,28 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         #     iter_counter += 1
 
         # ---------------- output mid results -------------------------------
-        if 6400 <= iteration < 6450:
-            image_np = image_start.detach().cpu().numpy().transpose((1, 2, 0))
-            img = Image.fromarray(np.uint8(image_np * 255), "RGB")
-            save_path = os.path.join(
-                os.getcwd(), f"rendered_img/static_{iteration}.png"
-            )
-            img.save(save_path, "PNG")
-        if (
-            (20000 <= iteration < 20050)
-            or (32800 <= iteration < 32850)
-            or (34800 <= iteration < 34850)
-        ):
-            for status in ["start", "end"]:
-                image = image_start if status == "start" else image_end
-                image_np = image.detach().cpu().numpy().transpose((1, 2, 0))
-                img = Image.fromarray(np.uint8(image_np * 255), "RGB")
-                save_path = os.path.join(
-                    os.getcwd(), f"rendered_img/{iteration}_{status}.png"
-                )
-                img.save(save_path, "PNG")
+        # if 6400 <= iteration < 6450:
+        #     image_np = image_start.detach().cpu().numpy().transpose((1, 2, 0))
+        #     img = Image.fromarray(np.uint8(image_np * 255), "RGB")
+        #     save_path = os.path.join(
+        #         os.getcwd(), f"rendered_img/static_{iteration}.png"
+        #     )
+        #     img.save(save_path, "PNG")
+        # if (
+        #     (20000 <= iteration < 20050)
+        #     or (32800 <= iteration < 32850)
+        #     or (34800 <= iteration < 34850)
+        # ):
+        #     for status in ["start", "end"]:
+        #         image = image_start if status == "start" else image_end
+        #         image_np = image.detach().cpu().numpy().transpose((1, 2, 0))
+        #         img = Image.fromarray(np.uint8(image_np * 255), "RGB")
+        #         save_path = os.path.join(
+        #             os.getcwd(), f"rendered_img/{iteration}_{status}.png"
+        #         )
+        #         img.save(save_path, "PNG")
 
-        # Loss
-        # if iteration < opt.only_train_single_frame:
-        #     dist_loss = 0.0
-        # else:
-        #     dist_loss = pivot_loss(revolute.pivot, gaussians.get_xyz)
-
-        loss = loss_end + loss_start  # + dist_loss
+        loss = loss_end + loss_start
         loss.backward()
 
         # if (start == opt.pretrain) and (iteration >= opt.pretrain):
@@ -355,10 +355,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                         scene_start,
                         scene_end,
                         gaussians,
-                        revolute,
                         render,
                         (pipe, background),
                         deform,
+                        revolute,
                         tb_writer,
                         dataset.load2gpu_on_the_fly,
                         is_first_test,
@@ -370,7 +370,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
             # --------------------- Densification --------------------------
             # Keep track of max radii in image-space for pruning
-            if opt.only_train_single_frame < iteration < opt.update_mask:
+            if opt.only_train_single_frame < iteration < opt.pretrain:
                 gaussians.max_radii2D[visibility_filter_end] = torch.max(
                     gaussians.max_radii2D[visibility_filter_end],
                     radii_end[visibility_filter_end],
@@ -386,7 +386,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 #     scene.save(iteration)
                 #     deform.save_weights(args.model_path, iteration)
 
-            if iteration < opt.update_mask:
+            if iteration < opt.only_train_single_frame:
                 gaussians.max_radii2D[visibility_filter_start] = torch.max(
                     gaussians.max_radii2D[visibility_filter_start],
                     radii_start[visibility_filter_start],
@@ -416,27 +416,28 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 ):
                     gaussians.reset_opacity()
 
-                # --------------- optimization -------------------------
+            # --------------- optimization -------------------------
 
-                if opt.only_train_single_frame < iteration < opt.pretrain:
-                    deform.optimizer.step()
-                    deform.optimizer.zero_grad()
-                    deform.update_learning_rate(iteration)
+            if iteration > opt.only_train_single_frame:
+                # either deformGS or deformArti
+                deform.optimizer.step()
+                deform.optimizer.zero_grad()
+                deform.update_learning_rate(iteration)
 
-                if opt.only_train_single_frame < iteration < opt.update_mask:
+                if opt.pretrain < iteration:
                     revolute.axis_pivot_optimizer.step()
                     revolute.axis_pivot_optimizer.zero_grad()
                     revolute.axis_pivot_scheduler.step()
 
-                if opt.pretrain < iteration < opt.update_mask:
+                if opt.pretrain < iteration:
                     revolute.theta_optimizer.step()
                     revolute.theta_optimizer.zero_grad()
                     revolute.theta_scheduler.step()
 
-                if iteration < opt.update_mask:
-                    gaussians.optimizer.step()
-                    gaussians.update_learning_rate(iteration)
-                    gaussians.optimizer.zero_grad(set_to_none=True)
+            if iteration < opt.only_train_single_frame:
+                gaussians.optimizer.step()
+                gaussians.update_learning_rate(iteration)
+                gaussians.optimizer.zero_grad(set_to_none=True)
 
 
 def prepare_output_and_logger(args):
@@ -478,10 +479,10 @@ def eval(
     scene_start,
     scene_end,
     gaussians,
-    arti_params,
     renderFunc,
     renderArgs,
     deform,
+    arti_params,
     tb_writer,
     load2gpu_on_the_fly,
     is_first_test=False,
@@ -491,6 +492,8 @@ def eval(
     l1_test, psnr_test = 0.0, 0.0
     for status in ["start", "end"]:
         scene = scene_start if status == "start" else scene_end
+        if not scene:
+            continue
         torch.cuda.empty_cache()
         validation_configs = (
             {"name": "test", "cameras": scene.getTestCameras()},
@@ -510,9 +513,6 @@ def eval(
                 for idx, viewpoint in enumerate(config["cameras"]):
                     if load2gpu_on_the_fly:
                         viewpoint.load2device()
-                    # fid = viewpoint.fid
-                    # xyz = gaussians.get_xyz
-                    # time_input = fid.unsqueeze(0).expand(xyz.shape[0], -1)
 
                     if status == "end":
                         xyz, rotation, _ = deform.step(gaussians, arti_params)
@@ -592,12 +592,12 @@ def training_report(
     revolute,
 ):
     if tb_writer:
-        if isinstance(m_loss, float):
-            tb_writer.add_scalar("train_loss_patches/m_loss", m_loss, iteration)
-        else:
-            tb_writer.add_scalar("train_loss_patches/m_loss", m_loss.item(), iteration)
+        ml = m_loss.item() if isinstance(m_loss, torch.Tensor) else m_loss
+        ul = u_loss.item() if isinstance(u_loss, torch.Tensor) else u_loss
 
-        tb_writer.add_scalar("train_loss_patches/u_loss", u_loss.item(), iteration)
+        tb_writer.add_scalar("train_loss_patches/m_loss", ml, iteration)
+        tb_writer.add_scalar("train_loss_patches/u_loss", ul, iteration)
+
         tb_writer.add_scalar("iter_time", elapsed, iteration)
         tb_writer.add_histogram("scene/opacity_histogram", opacity, iteration)
         tb_writer.add_scalar("total_points", gs_num, iteration)
@@ -624,7 +624,7 @@ if __name__ == "__main__":
         "--test_iterations",
         nargs="+",
         type=int,
-        default=[5000, 10000, 15000, 20000, 28000, 34000],
+        default=[5000, 7000, 12000, 16000, 24000, 28000, 30000],
     )
     parser.add_argument(
         "--save_iterations",

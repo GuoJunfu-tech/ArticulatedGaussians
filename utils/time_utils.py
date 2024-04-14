@@ -64,7 +64,7 @@ class DeformNetwork(nn.Module):
         input_ch=3,
         output_ch=59,
         multires=10,
-        is_blender=False,
+        is_blender=True,
         is_6dof=False,
     ):
         super(DeformNetwork, self).__init__()
@@ -75,33 +75,25 @@ class DeformNetwork(nn.Module):
         self.t_multires = 6 if is_blender else 10
         self.skips = [D // 2]
 
-        self.embed_time_fn, time_input_ch = get_embedder(self.t_multires, 1)
         self.embed_fn, xyz_input_ch = get_embedder(multires, 3)
-        self.input_ch = xyz_input_ch + time_input_ch
+        self.input_ch = xyz_input_ch
 
         if is_blender:
-            # Better for D-NeRF Dataset
-            self.time_out = 30
-
-            self.timenet = nn.Sequential(
-                nn.Linear(time_input_ch, 256),
-                nn.ReLU(inplace=True),
-                nn.Linear(256, self.time_out),
-            )
-
             self.linear = nn.ModuleList(
-                [nn.Linear(xyz_input_ch + self.time_out, W)]
+                [nn.Linear(xyz_input_ch, W)]
                 + [
                     (
                         nn.Linear(W, W)
                         if i not in self.skips
-                        else nn.Linear(W + xyz_input_ch + self.time_out, W)
+                        else nn.Linear(W + xyz_input_ch, W)
                     )
                     for i in range(D - 1)
                 ]
             )
 
         else:
+            print("[ERROR]::Should not be here")
+
             self.linear = nn.ModuleList(
                 [nn.Linear(self.input_ch, W)]
                 + [
@@ -123,34 +115,35 @@ class DeformNetwork(nn.Module):
         else:
             self.gaussian_warp = nn.Linear(W, 3)
         self.gaussian_rotation = nn.Linear(W, 4)
-        self.gaussian_scaling = nn.Linear(W, 3)
+        # self.gaussian_scaling = nn.Linear(W, 3)
 
-    def forward(self, x, t):
-        t_emb = self.embed_time_fn(t)
-        if self.is_blender:
-            t_emb = self.timenet(t_emb)  # better for D-NeRF Dataset
+    def forward(self, gaussians):
+        x = gaussians.get_xyz
         x_emb = self.embed_fn(x)
-        h = torch.cat([x_emb, t_emb], dim=-1)
+        h = x_emb
         for i, l in enumerate(self.linear):
             h = self.linear[i](h)
             h = F.relu(h)
             if i in self.skips:
-                h = torch.cat([x_emb, t_emb, h], -1)
+                h = torch.cat([x_emb, h], -1)
 
-        if self.is_6dof:
-            w = self.branch_w(h)
-            v = self.branch_v(h)
-            theta = torch.norm(w, dim=-1, keepdim=True)
-            w = w / theta + 1e-5
-            v = v / theta + 1e-5
-            screw_axis = torch.cat([w, v], dim=-1)
-            d_xyz = exp_se3(screw_axis, theta)
-        else:
-            d_xyz = self.gaussian_warp(h)
-        scaling = self.gaussian_scaling(h)
-        rotation = self.gaussian_rotation(h)
+            if self.is_6dof:
+                w = self.branch_w(h)
+                v = self.branch_v(h)
+                theta = torch.norm(w, dim=-1, keepdim=True)
+                w = w / theta + 1e-5
+                v = v / theta + 1e-5
+                screw_axis = torch.cat([w, v], dim=-1)
+                d_xyz = exp_se3(screw_axis, theta)
 
-        return d_xyz, rotation, scaling
+        d_xyz = self.gaussian_warp(h)
+        d_rotation = self.gaussian_rotation(h)
+
+        return (
+            x + d_xyz,
+            gaussians.get_rotation + d_rotation,
+            (d_xyz, d_rotation),
+        )
 
 
 class MovableNetwork(nn.Module):
@@ -171,12 +164,9 @@ class MovableNetwork(nn.Module):
         self.t_multires = 6
         # self.skips = [D // 2]
 
-        self.embed_time_fn, time_input_ch = get_embedder(self.t_multires, 1)
         self.embed_fn, xyz_input_ch = get_embedder(multires, 3)
-        self.input_ch = xyz_input_ch + time_input_ch
+        self.input_ch = xyz_input_ch
         self.movable_warp = nn.Linear(W, 1)
-
-        self.time_out = 30
 
         self.linear = nn.ModuleList(
             [nn.Linear(xyz_input_ch, W)] + [(nn.Linear(W, W)) for i in range(D - 1)]

@@ -596,7 +596,9 @@ class GaussianModel:
         self.denom[update_filter] += 1
 
     def initialize_mask(self, mask):
-        mask = torch.tensor(mask, device="cuda", requires_grad=False)
+        if not isinstance(mask, torch.Tensor):
+            mask = torch.tensor(mask, device="cuda", requires_grad=False)
+
         if mask.shape[0] != self._xyz.shape[0]:
             raise ValueError("mask must be align with Gaussians' number!")
 
