@@ -209,7 +209,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 status="start", load2device=dataset.load2gpu_on_the_fly
             )
             new_xyz, new_rotations = None, None
-        elif opt.only_train_single_frame < iteration < opt.update_params:
+        elif opt.only_train_single_frame < iteration < opt.pretrain:
+            viewpoint_cam_start, viewpoint_cam_end = (
+                viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
+            )
+        elif opt.pretrain < iteration < opt.update_params:
             viewpoint_cam_end = viewpoint_loader.get_viewpoint_cam(
                 status="end", load2device=dataset.load2gpu_on_the_fly
             )
@@ -229,7 +233,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
         # ---------------------- render --------------------------
         loss_start = 0.0
-        if (iteration < opt.only_train_single_frame) or (iteration > opt.update_params):
+        if (iteration < opt.pretrain) or (iteration > opt.update_params):
             # or (iter_counter < opt.update_mask_interval / 2):
             render_pkg_re = render(
                 viewpoint_cam_start,
@@ -276,33 +280,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             )
             gt_image_end = viewpoint_cam_end.original_image.cuda()
             loss_end = ll1_ssim_loss(image_end, gt_image_end, opt.lambda_dssim)
-
-        # if iter_counter == 199:
-        #     iter_counter = 0
-        # else:
-        #     iter_counter += 1
-
-        # ---------------- output mid results -------------------------------
-        # if 6400 <= iteration < 6450:
-        #     image_np = image_start.detach().cpu().numpy().transpose((1, 2, 0))
-        #     img = Image.fromarray(np.uint8(image_np * 255), "RGB")
-        #     save_path = os.path.join(
-        #         os.getcwd(), f"rendered_img/static_{iteration}.png"
-        #     )
-        #     img.save(save_path, "PNG")
-        # if (
-        #     (20000 <= iteration < 20050)
-        #     or (32800 <= iteration < 32850)
-        #     or (34800 <= iteration < 34850)
-        # ):
-        #     for status in ["start", "end"]:
-        #         image = image_start if status == "start" else image_end
-        #         image_np = image.detach().cpu().numpy().transpose((1, 2, 0))
-        #         img = Image.fromarray(np.uint8(image_np * 255), "RGB")
-        #         save_path = os.path.join(
-        #             os.getcwd(), f"rendered_img/{iteration}_{status}.png"
-        #         )
-        #         img.save(save_path, "PNG")
 
         loss = loss_end + loss_start
         loss.backward()
@@ -369,7 +346,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
             # --------------------- Densification --------------------------
             # Keep track of max radii in image-space for pruning
-            if opt.only_train_single_frame < iteration < opt.pretrain:
+            is_densify = False
+            if iteration > opt.update_params:
                 gaussians.max_radii2D[visibility_filter_end] = torch.max(
                     gaussians.max_radii2D[visibility_filter_end],
                     radii_end[visibility_filter_end],
@@ -377,6 +355,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 gaussians.add_densification_stats(
                     viewspace_point_tensor_end, visibility_filter_end
                 )
+                is_densify = True
 
                 # FIXME sick code! should update together!!
 
@@ -385,7 +364,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 #     scene.save(iteration)
                 #     deform.save_weights(args.model_path, iteration)
 
-            if iteration < opt.only_train_single_frame:
+            if (iteration < opt.only_train_single_frame) or (
+                iteration > opt.update_mask
+            ):
                 gaussians.max_radii2D[visibility_filter_start] = torch.max(
                     gaussians.max_radii2D[visibility_filter_start],
                     radii_start[visibility_filter_start],
@@ -394,21 +375,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 gaussians.add_densification_stats(
                     viewspace_point_tensor_start, visibility_filter_start
                 )
+                is_densify = True
 
-                if (
-                    iteration > opt.densify_from_iter
-                    and iteration % opt.densification_interval == 0
-                ):
-                    size_threshold = (
-                        20 if iteration > opt.opacity_reset_interval else None
-                    )
+            if (
+                iteration > opt.densify_from_iter
+                and iteration % opt.densification_interval == 0
+                and is_densify
+            ):
+                size_threshold = 20 if iteration > opt.opacity_reset_interval else None
 
-                    gaussians.densify_and_prune(
-                        opt.densify_grad_threshold,
-                        0.005,
-                        scene_end.cameras_extent,
-                        size_threshold,
-                    )
+                gaussians.densify_and_prune(
+                    opt.densify_grad_threshold,
+                    0.005,
+                    scene_end.cameras_extent,
+                    size_threshold,
+                )
 
                 if iteration % opt.opacity_reset_interval == 0 or (
                     dataset.white_background and iteration == opt.densify_from_iter
@@ -625,7 +606,7 @@ if __name__ == "__main__":
         "--test_iterations",
         nargs="+",
         type=int,
-        default=[5000, 7000, 12000, 16000, 24000, 28000, 30000],
+        default=[5000, 7000, 9000, 12000, 16000, 20000, 24000],
     )
     parser.add_argument(
         "--save_iterations",
