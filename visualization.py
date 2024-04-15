@@ -226,7 +226,7 @@ def draw_axis(pivot, axis):
 
 
 if __name__ == "__main__":
-    with open("./load_data/sci_2.pkl", "rb") as f:
+    with open("./load_data/oven2.pkl", "rb") as f:
         # with open("./final_params.pkl", "rb") as f:
         data = pickle.load(f)
 
@@ -242,14 +242,20 @@ if __name__ == "__main__":
     # mask = (ndr > 1e-2).to(gaussians.get_xyz.device, gaussians.get_xyz.dtype)
     # print(mask)
     draw_graph(xyz, ndr)
-    mask, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
+    draw_graph(xyz, ndx)
+    # mask_x, _ = build_mask(ndx.reshape(-1, 1), "gmm", 20)
+    mask_x = ndx > 1e-1
+    mask_r, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
+    mask_union = np.bitwise_and(mask_x, mask_r)
 
     # factors = (ndx - min(ndx)) / (max(ndx) - min(ndx))
 
-    pcd_2 = draw_one_color(xyz, mask)
+    pcd_x = draw_one_color(xyz, mask_x, dx=1.5)
+    pcd_r = draw_one_color(xyz, mask_r)
+    pcd_u = draw_one_color(xyz, mask_union, dx=3)
 
-    axis = np.array([0.00267, -0.0013, -1.61])
-    pivot = np.array([-0.31, 0.00012, -0.043])
-    line = draw_axis(pivot, axis)
+    # axis = np.array([0.00267, -0.0013, -1.61])
+    # pivot = np.array([-0.31, 0.00012, -0.043])
+    # line = draw_axis(pivot, axis)
 
-    o3d.visualization.draw_geometries([pcd_2, line])
+    o3d.visualization.draw_geometries([pcd_x, pcd_r, pcd_u])

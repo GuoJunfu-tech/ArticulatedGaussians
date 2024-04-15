@@ -91,8 +91,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         iter_start.record()
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
-        if iteration % 1000 == 0:
-            gaussians.oneupSHdegree()
 
         if iteration == end:
             # mask, centers = build_mask(factors.detach().cpu().numpy())
@@ -161,12 +159,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
             with torch.no_grad():
                 _, _, (d_xyz, d_rotations) = deformGS.step(gaussians)
+                ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
                 ndr = torch.norm(d_rotations, dim=-1).detach().cpu().numpy()
                 # mask = (ndr > 1e-2).to(
                 #     gaussians.get_xyz.device, gaussians.get_xyz.dtype
                 # )
 
-                mask, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
+                mask_r, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
+                mask_x = ndx > 1e-1
+                mask_u = np.bitwise_and(mask_r, mask_x)
 
             # data = {
             #     "gaussians": gaussians,
@@ -183,7 +184,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             #     pickle.dump(data, f)
             #     print(" stage 2 data saved")
 
-            gaussians.initialize_mask(mask)
+            # exit()
+
+            gaussians.initialize_mask(mask_u)
             revolute.set_theta(math.pi / 2)  # TODO delete
             continue
 
@@ -209,11 +212,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 status="start", load2device=dataset.load2gpu_on_the_fly
             )
             new_xyz, new_rotations = None, None
-        elif opt.only_train_single_frame < iteration < opt.pretrain:
-            viewpoint_cam_start, viewpoint_cam_end = (
-                viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
-            )
-        elif opt.pretrain < iteration < opt.update_params:
+        # elif opt.only_train_single_frame < iteration < opt.pretrain:
+        #     viewpoint_cam_start, viewpoint_cam_end = (
+        #         viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
+        #     )
+        elif opt.only_train_single_frame < iteration < opt.update_params:
             viewpoint_cam_end = viewpoint_loader.get_viewpoint_cam(
                 status="end", load2device=dataset.load2gpu_on_the_fly
             )
@@ -221,6 +224,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             viewpoint_cam_start, viewpoint_cam_end = (
                 viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
             )
+            if iteration % 1000 == 0:
+                gaussians.oneupSHdegree()
         else:
             raise ValueError
 
@@ -233,7 +238,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
         # ---------------------- render --------------------------
         loss_start = 0.0
-        if (iteration < opt.pretrain) or (iteration > opt.update_params):
+        if (iteration < opt.only_train_single_frame) or (iteration > opt.update_params):
             # or (iter_counter < opt.update_mask_interval / 2):
             render_pkg_re = render(
                 viewpoint_cam_start,
@@ -382,6 +387,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 and iteration % opt.densification_interval == 0
                 and is_densify
             ):
+                is_densify = False
                 size_threshold = 20 if iteration > opt.opacity_reset_interval else None
 
                 gaussians.densify_and_prune(
@@ -520,6 +526,7 @@ def eval(
 
                     if load2gpu_on_the_fly:
                         viewpoint.load2device("cpu")
+
                     if tb_writer and (idx < 5):
                         tb_writer.add_images(
                             config["name"]
@@ -606,7 +613,7 @@ if __name__ == "__main__":
         "--test_iterations",
         nargs="+",
         type=int,
-        default=[5000, 7000, 9000, 12000, 16000, 20000, 24000],
+        default=[6000, 9000, 12000, 14000, 16000, 20000, 24000],
     )
     parser.add_argument(
         "--save_iterations",
