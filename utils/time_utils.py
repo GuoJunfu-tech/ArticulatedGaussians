@@ -118,7 +118,7 @@ class DeformNetwork(nn.Module):
         # self.gaussian_scaling = nn.Linear(W, 3)
 
     def forward(self, gaussians):
-        x = gaussians.get_xyz
+        x = gaussians.get_xyz.detach()
         x_emb = self.embed_fn(x)
         h = x_emb
         for i, l in enumerate(self.linear):
