@@ -129,23 +129,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 type="img",
             )
 
-            data = {
-                "gaussians": gaussians,
-                "mask": gaussians.get_movable_mask,
-                "factor": factors,
-                "deformModel": deform,
-                "params": {
-                    "axis": revolute.axis.tolist(),
-                    "pivot": revolute.pivot.tolist(),
-                },
-            }
-            with open("./stage_3.pkl", "wb") as f:
-                pickle.dump(data, f)
-                print("data saved")
+            # data = {
+            #     "gaussians": gaussians,
+            #     "mask": gaussians.get_movable_mask,
+            #     "factor": factors,
+            #     "deformModel": deform,
+            #     "params": {
+            #         "axis": revolute.axis.tolist(),
+            #         "pivot": revolute.pivot.tolist(),
+            #     },
+            # }
+            # with open("./stage_3.pkl", "wb") as f:
+            #     pickle.dump(data, f)
+            #     print("data saved")
 
             print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
-
-            exit()
 
         if opt.only_train_single_frame == iteration:
             print("[Training]::step 1 is over, now training deformation net")
@@ -183,8 +181,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             # with open("./stage_2.pkl", "wb") as f:
             #     pickle.dump(data, f)
             #     print(" stage 2 data saved")
-
-            # exit()
 
             gaussians.initialize_mask(mask_u)
             revolute.set_theta(math.pi / 2)  # TODO delete
@@ -288,12 +284,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
         loss = loss_end + loss_start
         loss.backward()
-
-        # if (start == opt.pretrain) and (iteration >= opt.pretrain):
-        #     grads["opacity"].append(gaussians._opacity.grad.detach().cpu().clone())
-        #     grads["scaling"].append(gaussians._scaling.grad.detach().cpu().clone())
-        #     grads["xyz"].append(gaussians._xyz.grad.detach().cpu().clone())
-        #     grads["rotation"].append(gaussians._rotation.grad.detach().cpu().clone())
 
         iter_end.record()
 
