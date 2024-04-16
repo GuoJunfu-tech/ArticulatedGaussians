@@ -21,7 +21,7 @@ import torch
 from tqdm import tqdm
 import uuid
 
-from utils.loss_utils import ll1_ssim_loss, l1_loss
+from utils.loss_utils import ll1_ssim_loss, l1_loss, arap_loss
 from gaussian_renderer import render, network_gui
 from scene import Scene, GaussianModel, DeformModel, Revolute, DeformGS
 from utils.general_utils import safe_state, get_linear_noise_func
@@ -29,6 +29,7 @@ from utils.image_utils import psnr
 from utils.classification_utils import build_mask
 from utils.viewpoint_utils import ViewpointLoader
 from utils.visualization_utils import render_results
+from utils.knn_utils import knn
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
 try:
@@ -76,16 +77,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     end = opt.update_mask
 
     deform = None
+    neighbor_dist = None
+    neighbor_weight = None
     # is_end_frame_with_grad = False
     # grad_counter = 0
-
-    # if start == opt.pretrain:
-    #     with open("./load_data/stage_2.pkl", "rb") as f:
-    #         data = pickle.load(f)
-    #     gaussians = data["gaussians"]
-    #     factors = data["factor"]
-    #     revolute_params = data["params"]
-    #     gaussians._movable_mask = None
 
     for iteration in range(start, end + 1):
         iter_start.record()
@@ -147,14 +142,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
         if opt.only_train_single_frame == iteration:
             print("[Training]::step 1 is over, now training deformation net")
+            neighbor_sq_dist, neighbor_indices = knn(gaussians.get_xyz)
+            weight = np.exp(-2000, neighbor_sq_dist)
+            dist = np.sqrt(neighbor_sq_dist)
+            neighbor_weight = (
+                torch.tensor(weight).float().to(gaussians.get_xyz.device())
+            )
+            neighbor_dist = torch.tensor(dist).float().to(gaussians.get_xyz.device())
             continue
 
         if opt.pretrain == iteration:
             print("[Training]::step 2 is over, now update the mask")
-            print(
-                f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
-            )
-
             with torch.no_grad():
                 _, _, (d_xyz, d_rotations) = deformGS.step(gaussians)
                 ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
@@ -282,7 +280,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             gt_image_end = viewpoint_cam_end.original_image.cuda()
             loss_end = ll1_ssim_loss(image_end, gt_image_end, opt.lambda_dssim)
 
-        loss = loss_end + loss_start
+        loss_arap = 0.0
+        if opt.only_train_single_frame < iteration < opt.pretrain:
+            loss_arap = arap_loss(neighbor_dist, neighbor_weight)
+
+        loss = loss_end + loss_start + 0.5 * loss_arap
         loss.backward()
 
         iter_end.record()
