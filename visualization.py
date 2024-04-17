@@ -238,13 +238,17 @@ if __name__ == "__main__":
 
     ndx = torch.norm(dx, dim=-1).detach().cpu().numpy()
     ndr = torch.norm(dr, dim=-1).detach().cpu().numpy()
+
+    ndx = (ndx - min(ndx)) / (max(ndx) - min(ndx))
+    ndr = (ndr - min(ndr)) / (max(ndr) - min(ndr))
+    print(max(ndx))
     # factors = (ndr > 1e-2).to(torch.float32).to("cuda")
     # mask = (ndr > 1e-2).to(gaussians.get_xyz.device, gaussians.get_xyz.dtype)
     # print(mask)
     draw_graph(xyz, ndr)
     draw_graph(xyz, ndx)
     # mask_x, _ = build_mask(ndx.reshape(-1, 1), "gmm", 20)
-    mask_x = ndx > 5e-1
+    mask_x = ndx > 2e-1
     mask_r, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
     # mask_x, _ = build_mask(ndx.reshape(-1, 1), "gmm", 20)
     mask_union = np.bitwise_and(mask_x, mask_r)

@@ -63,7 +63,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     iter_end = torch.cuda.Event(enable_timing=True)
     best_psnr = 0.0
     best_iteration = 0
-    progress_bar = tqdm(range(opt.iterations), desc="Training progress")
     smooth_term = get_linear_noise_func(
         lr_init=0.1, lr_final=1e-15, lr_delay_mult=0.01, max_steps=20000
     )
@@ -75,6 +74,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     start = 1
     # end = opt.pretrain
     end = opt.update_mask
+    progress_bar = tqdm(range(end), desc="Training progress")
 
     deform = None
     neighbor_dist = None
@@ -146,7 +146,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             neighbor_sq_dist, neighbor_indices = knn(
                 gaussians.get_xyz.detach().cpu().numpy(), 20
             )
-            weight = np.exp(-2000, neighbor_sq_dist)
+            weight = np.exp(-200 * neighbor_sq_dist)
             dist = np.sqrt(neighbor_sq_dist)
             neighbor_weight = torch.tensor(weight).float().to(gaussians.get_xyz.device)
             neighbor_dist = torch.tensor(dist).float().to(gaussians.get_xyz.device)
@@ -162,24 +162,27 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 #     gaussians.get_xyz.device, gaussians.get_xyz.dtype
                 # )
 
+                ndx = (ndx - min(ndx)) / (max(ndx) - min(ndx))
+                ndr = (ndr - min(ndr)) / (max(ndr) - min(ndr))
+
                 mask_r, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
-                mask_x = ndx > 5e-1
+                mask_x = ndx > 1e-1
                 mask_u = np.bitwise_and(mask_r, mask_x)
 
-            # data = {
-            #     "gaussians": gaussians,
-            #     "dx": d_xyz,
-            #     "dr": d_rotations,
-            #     "deformModel": deform,
-            #     "params": {
-            #         "axis": revolute.axis.tolist(),
-            #         "pivot": revolute.pivot.tolist(),
-            #     },
-            # }
+            data = {
+                "gaussians": gaussians,
+                "dx": d_xyz,
+                "dr": d_rotations,
+                "deformModel": deform,
+                "params": {
+                    "axis": revolute.axis.tolist(),
+                    "pivot": revolute.pivot.tolist(),
+                },
+            }
 
-            # with open("./stage_2.pkl", "wb") as f:
-            #     pickle.dump(data, f)
-            #     print(" stage 2 data saved")
+            with open("./stage_2.pkl", "wb") as f:
+                pickle.dump(data, f)
+                print(" stage 2 data saved")
 
             gaussians.initialize_mask(mask_u)
             revolute.set_theta(math.pi / 2)  # TODO delete
@@ -221,8 +224,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             )
             if iteration % 1000 == 0:
                 gaussians.oneupSHdegree()
-        else:
-            raise ValueError
 
         # ------------------- core: deformation ----------------------------
 
@@ -282,12 +283,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             loss_end = ll1_ssim_loss(image_end, gt_image_end, opt.lambda_dssim)
 
         loss_arap = 0.0
-        # if opt.only_train_single_frame < iteration < opt.pretrain:
-        #     loss_arap = arap_loss(
-        #         new_xyz, neighbor_indices, neighbor_dist, neighbor_weight
-        #     )
+        if opt.only_train_single_frame < iteration < opt.pretrain:
+            loss_arap = arap_loss(
+                new_xyz, neighbor_indices, neighbor_dist, neighbor_weight
+            )
 
-        loss = loss_end + loss_start + 0.5 * loss_arap
+        loss = loss_end + loss_start + loss_arap
         loss.backward()
 
         iter_end.record()
@@ -611,7 +612,7 @@ if __name__ == "__main__":
         "--test_iterations",
         nargs="+",
         type=int,
-        default=[6000, 9000, 12000, 14000, 16000, 20000, 24000],
+        default=[6000, 7000, 8000, 9000, 11000, 12000, 14000, 16000, 20000, 24000],
     )
     parser.add_argument(
         "--save_iterations",
