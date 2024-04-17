@@ -166,9 +166,10 @@ def ll1_ssim_loss(image, gt_image, factor):
 
 
 def arap_loss(new_xyz, neighbor_indices, neighbor_dist, neighbor_weight):
+    neighbor_indices = torch.tensor(neighbor_indices, requires_grad=False).long()
     neighbor_pts = new_xyz[neighbor_indices]
     curr_offset = neighbor_pts - new_xyz[:, None]
     curr_offset_mag = torch.sqrt((curr_offset.pow(2)).sum(-1) + 1e-20)
     return torch.sqrt(
-        (curr_offset_mag - neighbor_dist).pow(2).sum(-1) * neighbor_weight + 1e-20
+        (curr_offset_mag - neighbor_dist).pow(2) * neighbor_weight + 1e-20
     ).mean()

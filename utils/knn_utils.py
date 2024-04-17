@@ -21,4 +21,3 @@ def knn(xyz, num_knn):
         sq_dists.append(d[1:])
 
     return np.array(sq_dists), np.array(indices)
-

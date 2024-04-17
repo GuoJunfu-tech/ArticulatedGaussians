@@ -142,13 +142,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
         if opt.only_train_single_frame == iteration:
             print("[Training]::step 1 is over, now training deformation net")
-            neighbor_sq_dist, neighbor_indices = knn(gaussians.get_xyz)
+            print("[Training]::building knn trees")
+            neighbor_sq_dist, neighbor_indices = knn(
+                gaussians.get_xyz.detach().cpu().numpy(), 20
+            )
             weight = np.exp(-2000, neighbor_sq_dist)
             dist = np.sqrt(neighbor_sq_dist)
-            neighbor_weight = (
-                torch.tensor(weight).float().to(gaussians.get_xyz.device())
-            )
-            neighbor_dist = torch.tensor(dist).float().to(gaussians.get_xyz.device())
+            neighbor_weight = torch.tensor(weight).float().to(gaussians.get_xyz.device)
+            neighbor_dist = torch.tensor(dist).float().to(gaussians.get_xyz.device)
             continue
 
         if opt.pretrain == iteration:
@@ -162,7 +163,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 # )
 
                 mask_r, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
-                mask_x = ndx > 1e-1
+                mask_x = ndx > 5e-1
                 mask_u = np.bitwise_and(mask_r, mask_x)
 
             # data = {
@@ -281,8 +282,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             loss_end = ll1_ssim_loss(image_end, gt_image_end, opt.lambda_dssim)
 
         loss_arap = 0.0
-        if opt.only_train_single_frame < iteration < opt.pretrain:
-            loss_arap = arap_loss(neighbor_dist, neighbor_weight)
+        # if opt.only_train_single_frame < iteration < opt.pretrain:
+        #     loss_arap = arap_loss(
+        #         new_xyz, neighbor_indices, neighbor_dist, neighbor_weight
+        #     )
 
         loss = loss_end + loss_start + 0.5 * loss_arap
         loss.backward()
@@ -314,6 +317,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     iter_start.elapsed_time(iter_end),
                     loss_start,
                     loss_end,
+                    loss_arap,
                     gaussians.get_xyz.shape[0],
                     gaussians.get_opacity,
                     revolute,
@@ -362,7 +366,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 #     deform.save_weights(args.model_path, iteration)
 
             if (iteration < opt.only_train_single_frame) or (
-                iteration > opt.update_mask
+                iteration > opt.update_params
             ):
                 gaussians.max_radii2D[visibility_filter_start] = torch.max(
                     gaussians.max_radii2D[visibility_filter_start],
@@ -568,6 +572,7 @@ def training_report(
     elapsed,
     u_loss,
     m_loss,
+    rigid_loss,
     gs_num,
     opacity,
     revolute,
@@ -578,6 +583,7 @@ def training_report(
 
         tb_writer.add_scalar("train_loss_patches/m_loss", ml, iteration)
         tb_writer.add_scalar("train_loss_patches/u_loss", ul, iteration)
+        tb_writer.add_scalar("train_loss_patches/arap_loss", rigid_loss, iteration)
 
         tb_writer.add_scalar("iter_time", elapsed, iteration)
         tb_writer.add_histogram("scene/opacity_histogram", opacity, iteration)
