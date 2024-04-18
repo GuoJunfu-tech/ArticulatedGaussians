@@ -1,77 +1,39 @@
 import torch
-from torch.cuda.amp import autocast
+import unittest
+
+from utils.loss_utils import chamfer_distance_loss
 
 
-def batched_chamfer_distance(set1, set2, batch_size=512):
-    """
-    Compute Chamfer distance between two sets of points in PyTorch, supporting gradient tracking.
+class TestChamferDistance(unittest.TestCase):
+    def test_empty_point_clouds(self):
+        """test empty pcd"""
+        p1 = torch.empty(0, 3)
+        p2 = torch.empty(0, 3)
+        with self.assertRaises(AssertionError):
+            self.assertTrue(torch.isnan(chamfer_distance_loss(p1, p2)))
 
-    Args:
-    - set1: Tensor of shape (N, D) representing the first set of points.
-    - set2: Tensor of shape (M, D) representing the second set of points.
-    - batch_size: Size of the batch for distance computations.
+    def test_identical_point_clouds(self):
+        """test two same pcd"""
+        p1 = torch.rand(10, 3)
+        p2 = p1.clone()
+        self.assertAlmostEqual(chamfer_distance_loss(p1, p2).item(), 0, places=5)
 
-    Returns:
-    - The Chamfer distance.
-    """
-    N, D = set1.shape
-    M, _ = set2.shape
-    device = set1.device
+    def test_symmetry(self):
+        """test symmetry pcd"""
+        p1 = torch.rand(10, 3)
+        p2 = torch.rand(15, 3)
+        dist1 = chamfer_distance_loss(p1, p2)
+        dist2 = chamfer_distance_loss(p2, p1)
+        self.assertAlmostEqual(dist1.item(), dist2.item(), places=5)
 
-    # Initialize tensors for minimum distances
-    min_dists_1_to_2 = torch.full((N,), float("inf"), device=device)
-    min_dists_2_to_1 = torch.full((M,), float("inf"), device=device)
-
-    # Compute in batches to save memory
-    for start_idx in range(0, N, batch_size):
-        end_idx = start_idx + batch_size
-        subset_1 = set1[start_idx:end_idx]
-
-        for start_jdx in range(0, M, batch_size):
-            end_jdx = start_jdx + batch_size
-            subset_2 = set2[start_jdx:end_jdx]
-
-            # Compute pairwise distance
-            dists = torch.cdist(subset_1, subset_2)
-
-            # Update minimum distances
-            min_dists_1_to_2[start_idx:end_idx] = torch.min(
-                torch.cat(
-                    (min_dists_1_to_2[start_idx:end_idx].unsqueeze(1), dists), dim=1
-                ),
-                dim=1,
-            ).values
-            min_dists_2_to_1[start_jdx:end_jdx] = torch.min(
-                torch.cat(
-                    (min_dists_2_to_1[start_jdx:end_jdx].unsqueeze(1), dists.t()), dim=1
-                ),
-                dim=1,
-            ).values
-
-    # Compute the Chamfer distance
-    chamfer_dist = torch.mean(min_dists_1_to_2) + torch.mean(min_dists_2_to_1)
-
-    return chamfer_dist
+    def test_known_result(self):
+        """test a predefined pcd"""
+        p1 = torch.tensor([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]])
+        p2 = torch.tensor([[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]])
+        expected_distance = (3 + 3) / 2
+        actual_distance = chamfer_distance_loss(p1, p2)
+        self.assertAlmostEqual(actual_distance.item(), expected_distance, places=5)
 
 
-# Example usage with gradient tracking
-set1 = torch.randn(100000, 3, requires_grad=True, device="cuda")
-set2 = torch.randn(20000, 3, requires_grad=True, device="cuda")
-
-import time
-
-start_time = time.time()
-chamfer_distance = batched_chamfer_distance(set1, set2)
-cd1 = time.time()
-print(f"Chamfer Distance: {chamfer_distance.item()} with {cd1-start_time} secs")
-start_time = time.time()
-with autocast():
-    chamfer_distance = batched_chamfer_distance(set1, set2)
-    cd1 = time.time()
-    print(
-        f"Chamfer Distance cuda: {chamfer_distance.item()} with {cd1-start_time} secs"
-    )
-
-
-# Example backward pass
-chamfer_distance.backward()
+if __name__ == "__main__":
+    unittest.main()

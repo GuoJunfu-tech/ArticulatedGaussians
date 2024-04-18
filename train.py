@@ -29,7 +29,7 @@ from utils.image_utils import psnr
 from utils.classification_utils import build_mask
 from utils.viewpoint_utils import ViewpointLoader
 from utils.visualization_utils import render_results
-from utils.knn_utils import knn
+from utils.knn_utils import knn, construct_tree
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
 try:
@@ -78,7 +78,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
     deform = None
     neighbor_dist = None
-    neighbor_weight = None
+    deformed_xyz_pcd_tree = None
     # is_end_frame_with_grad = False
     # grad_counter = 0
 
@@ -124,19 +124,19 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 type="img",
             )
 
-            # data = {
-            #     "gaussians": gaussians,
-            #     "mask": gaussians.get_movable_mask,
-            #     "factor": factors,
-            #     "deformModel": deform,
-            #     "params": {
-            #         "axis": revolute.axis.tolist(),
-            #         "pivot": revolute.pivot.tolist(),
-            #     },
-            # }
-            # with open("./stage_3.pkl", "wb") as f:
-            #     pickle.dump(data, f)
-            #     print("data saved")
+            data = {
+                "gaussians": gaussians,
+                "mask": gaussians.get_movable_mask,
+                "factor": factors,
+                "deformModel": deform,
+                "params": {
+                    "axis": revolute.axis.tolist(),
+                    "pivot": revolute.pivot.tolist(),
+                },
+            }
+            with open("./stage_3.pkl", "wb") as f:
+                pickle.dump(data, f)
+                print("data saved")
 
             print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
 
@@ -154,6 +154,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
         if opt.pretrain == iteration:
             print("[Training]::step 2 is over, now update the mask")
+            import open3d as o3d
+
             with torch.no_grad():
                 _, _, (d_xyz, d_rotations) = deformGS.step(gaussians)
                 ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
@@ -168,21 +170,25 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 mask_r, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
                 mask_x = ndx > 1e-1
                 mask_u = np.bitwise_and(mask_r, mask_x)
+                xyz = gaussians.get_xyz.detach()
+                deformed_xyz = xyz + d_xyz.detach()
+                deformed_xyz = deformed_xyz[mask_u == 1].cpu().numpy()
+                _, deformed_xyz_pcd_tree = construct_tree(deformed_xyz)
 
-            data = {
-                "gaussians": gaussians,
-                "dx": d_xyz,
-                "dr": d_rotations,
-                "deformModel": deform,
-                "params": {
-                    "axis": revolute.axis.tolist(),
-                    "pivot": revolute.pivot.tolist(),
-                },
-            }
+            # data = {
+            #     "gaussians": gaussians,
+            #     "dx": d_xyz,
+            #     "dr": d_rotations,
+            #     "deformModel": deform,
+            #     "params": {
+            #         "axis": revolute.axis.tolist(),
+            #         "pivot": revolute.pivot.tolist(),
+            #     },
+            # }
 
-            with open("./stage_2.pkl", "wb") as f:
-                pickle.dump(data, f)
-                print(" stage 2 data saved")
+            # with open("./stage_2.pkl", "wb") as f:
+            #     pickle.dump(data, f)
+            #     print(" stage 2 data saved")
 
             gaussians.initialize_mask(mask_u)
             revolute.set_theta(math.pi / 2)  # TODO delete

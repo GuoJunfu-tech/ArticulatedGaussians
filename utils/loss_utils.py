@@ -97,53 +97,20 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
         return ssim_map.mean(1).mean(1).mean(1)
 
 
-def chamfer_distance_loss(
-    set1: torch.Tensor, set2: torch.Tensor, batch_size: int = 1000
-) -> torch.Tensor:
-    """
-    Compute the Chamfer distance between two point clouds.
-    Args:
-    set1: (N, D) The predicted point cloud.
-    set2: (M, D) The ground truth point cloud.
-    Returns:
-    chamfer_distance: The Chamfer distance between the two sets.
+def chamfer_distance_loss(p1: torch.Tensor, p2: torch.Tensor) -> torch.Tensor:
+    assert p1.shape[0] != 0
+    assert p2.shape[0] != 0
 
-    """
-    N, D = set1.shape
-    M, _ = set2.shape
+    p1_square = p1.pow(2).sum(dim=1, keepdim=True)  # [N, 1]
+    p2_square = p2.pow(2).sum(dim=1, keepdim=True)  # [M, 1]
+    dist = p1_square + p2_square.transpose(0, 1) - 2 * p1 @ p2.transpose(0, 1)  # [N, M]
 
-    # Initialize tensors to hold the minimum distances
-    min_dist_1_to_2 = torch.full((N,), float("inf"), device=set1.device)
-    min_dist_2_to_1 = torch.full((M,), float("inf"), device=set2.device)
+    # Get min dist for each element in p1 to p2
+    min_dist_p1_to_p2, _ = dist.min(dim=1)
+    min_dist_p2_to_p1, _ = dist.min(dim=0)
 
-    # Process in batches
-    for i in range(0, N, batch_size):
-        for j in range(0, M, batch_size):
-            batch1 = set1[i : i + batch_size]
-            batch2 = set2[j : j + batch_size]
-
-            # Compute pairwise distance between batches
-            dists = torch.cdist(
-                batch1, batch2
-            )  # Efficient pairwise distance for batches
-
-            # Update minimum distances
-            min_dist_1_to_2[i : i + batch_size] = torch.min(
-                torch.cat(
-                    (min_dist_1_to_2[i : i + batch_size].unsqueeze(1), dists), dim=1
-                ),
-                dim=1,
-            )[0]
-            min_dist_2_to_1[j : j + batch_size] = torch.min(
-                torch.cat(
-                    (min_dist_2_to_1[j : j + batch_size].unsqueeze(1), dists.t()), dim=1
-                ),
-                dim=1,
-            )[0]
-
-    # Compute final Chamfer distance
-    chamfer_distance = torch.mean(min_dist_1_to_2) + torch.mean(min_dist_2_to_1)
-    return chamfer_distance
+    # Mean distance
+    return min_dist_p1_to_p2.mean() + min_dist_p2_to_p1.mean()
 
 
 def opacity_loss(radii, gaussians, factor=0.1):

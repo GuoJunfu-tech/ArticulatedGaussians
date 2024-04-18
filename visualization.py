@@ -13,6 +13,7 @@ import math
 import copy
 from argparse import ArgumentParser, Namespace
 from gaussian_renderer import render, network_gui
+from utils.knn_utils import knn
 from utils.loss_utils import l1_loss, ssim, chamfer_distance_loss
 from utils.general_utils import farthest_point_sampling
 from utils.classification_utils import kmeans, gmm
@@ -99,7 +100,7 @@ def visualize(xyz, factor=None, grad=None):
     o3d.visualization.draw_geometries(vis)
 
 
-def draw_one_color(xyz, filter, dx=0.0):
+def draw_one_color(xyz, filter=None, dx=0.0):
     pcd = o3d.geometry.PointCloud()
     new_xyz = xyz.copy()
 
@@ -108,6 +109,8 @@ def draw_one_color(xyz, filter, dx=0.0):
     pcd.points = o3d.utility.Vector3dVector(new_xyz)
 
     # colors = np.zeros((xyz.shape[0], 3))
+    if not filter:
+        filter = np.zeros((xyz.shape[0], 1))
     N = filter.shape[0]
     red = np.tile([1, 0, 0], (N, 1))
     blue = np.tile([0, 0, 1], (N, 1))
@@ -210,6 +213,10 @@ def test_maya():
     mlab.show()
 
 
+def divide_mask(xyz, mask):
+    return xyz[mask == 0], xyz[mask == 1]
+
+
 def draw_axis(pivot, axis):
     axis = axis / np.linalg.norm(axis)
     end_point = pivot + axis
@@ -225,8 +232,35 @@ def draw_axis(pivot, axis):
     return line_set
 
 
+def chamfer_distance_open3d(pcd1, pcd2):
+    # 创建 KDTree
+    pcd_tree1 = o3d.geometry.KDTreeFlann(pcd1)
+    pcd_tree2 = o3d.geometry.KDTreeFlann(pcd2)
+
+    # 计算从pcd1到pcd2的单向距离
+    def compute_one_side(pcd1, pcd_tree2):
+        distances = []
+        for i in range(len(pcd1.points)):
+            _, idx, dist = pcd_tree2.search_knn_vector_3d(pcd1.points[i], 1)
+            distances.append(dist[0])
+        return distances
+
+    dist1 = compute_one_side(pcd1, pcd_tree2)
+    dist2 = compute_one_side(pcd2, pcd_tree1)
+
+    # 计算Chamfer距离
+    chamfer_dist = np.mean(dist1) + np.mean(dist2)
+    return chamfer_dist
+
+
+def test_cd_loss():
+    a = torch.tensor([[1, 0, 0], [1, 1, 0]], dtype=torch.float64)
+    b = torch.tensor([[2, 0, 0], [2, 1, 0]], dtype=torch.float64)
+    print(chamfer_distance_loss(a, b))
+
+
 if __name__ == "__main__":
-    with open("./load_data/oven2.pkl", "rb") as f:
+    with open("./load_data/washer.pkl", "rb") as f:
         # with open("./final_params.pkl", "rb") as f:
         data = pickle.load(f)
 
@@ -245,22 +279,27 @@ if __name__ == "__main__":
     # factors = (ndr > 1e-2).to(torch.float32).to("cuda")
     # mask = (ndr > 1e-2).to(gaussians.get_xyz.device, gaussians.get_xyz.dtype)
     # print(mask)
-    draw_graph(xyz, ndr)
-    draw_graph(xyz, ndx)
+    # draw_graph(xyz, ndr)
+    # draw_graph(xyz, ndx)
     # mask_x, _ = build_mask(ndx.reshape(-1, 1), "gmm", 20)
     mask_x = ndx > 2e-1
     mask_r, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
-    # mask_x, _ = build_mask(ndx.reshape(-1, 1), "gmm", 20)
     mask_union = np.bitwise_and(mask_x, mask_r)
 
-    # factors = (ndx - min(ndx)) / (max(ndx) - min(ndx))
+    unmove_pts, move_pts = divide_mask(xyz, mask_union)
 
-    pcd_x = draw_one_color(xyz, mask_x, dx=1.5)
-    pcd_r = draw_one_color(xyz, mask_r)
-    pcd_u = draw_one_color(xyz, mask_union, dx=3)
+    mdx = dx.detach().cpu().numpy()[mask_union == 1]
+
+    pcd_u = draw_one_color(unmove_pts, dx=0)
+    pcd_m = draw_one_color(move_pts, dx=2)
+    pcd_after_move = draw_one_color(move_pts + mdx, dx=2)
+
+    dist = chamfer_distance_open3d(pcd_after_move, pcd_m)
+    print(dist)
 
     # axis = np.array([0.00267, -0.0013, -1.61])
     # pivot = np.array([-0.31, 0.00012, -0.043])
     # line = draw_axis(pivot, axis)
 
-    o3d.visualization.draw_geometries([pcd_x, pcd_r, pcd_u])
+    # o3d.visualization.draw_geometries([pcd_x, pcd_r, pcd_u])
+    o3d.visualization.draw_geometries([pcd_u, pcd_m, pcd_after_move])

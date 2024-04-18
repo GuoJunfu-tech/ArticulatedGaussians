@@ -3,13 +3,6 @@ import numpy as np
 
 
 def knn(xyz, num_knn):
-    """This function is borrowed from work *Dynamic 3D Gaussians:
-    Tracking by Persistent Dynamic View Synthesis*
-    (https://dynamic3dgaussians.github.io/)
-
-    input: np array xyz coordinates, knn number
-    output: distance between
-    """
     indices = []
     sq_dists = []
     pcd = o3d.geometry.PointCloud()
@@ -21,3 +14,10 @@ def knn(xyz, num_knn):
         sq_dists.append(d[1:])
 
     return np.array(sq_dists), np.array(indices)
+
+
+def construct_tree(xyz):
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(np.ascontiguousarray(xyz, np.float64))
+    pcd_tree = o3d.geometry.KDTreeFlann(pcd)
+    return pcd, pcd_tree
