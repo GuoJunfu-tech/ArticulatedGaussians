@@ -69,6 +69,10 @@ class GaussianModel:
         return self.rotation_activation(self._rotation)
 
     @property
+    def get_movable_xyz(self):
+        return self._xyz[self._movable_mask == 1]
+
+    @property
     def get_xyz(self):
         return self._xyz
 

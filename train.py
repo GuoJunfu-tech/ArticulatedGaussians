@@ -21,7 +21,7 @@ import torch
 from tqdm import tqdm
 import uuid
 
-from utils.loss_utils import ll1_ssim_loss, l1_loss, arap_loss
+from utils.loss_utils import ll1_ssim_loss, l1_loss, arap_loss, chamfer_distance_loss
 from gaussian_renderer import render, network_gui
 from scene import Scene, GaussianModel, DeformModel, Revolute, DeformGS
 from utils.general_utils import safe_state, get_linear_noise_func
@@ -78,7 +78,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
     deform = None
     neighbor_dist = None
-    deformed_xyz_pcd_tree = None
+    deformed_xyz = torch.empty(0)
     # is_end_frame_with_grad = False
     # grad_counter = 0
 
@@ -139,6 +139,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 print("data saved")
 
             print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
+            exit()
 
         if opt.only_train_single_frame == iteration:
             print("[Training]::step 1 is over, now training deformation net")
@@ -146,7 +147,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             neighbor_sq_dist, neighbor_indices = knn(
                 gaussians.get_xyz.detach().cpu().numpy(), 20
             )
-            weight = np.exp(-200 * neighbor_sq_dist)
+            weight = np.exp(-20 * neighbor_sq_dist)
             dist = np.sqrt(neighbor_sq_dist)
             neighbor_weight = torch.tensor(weight).float().to(gaussians.get_xyz.device)
             neighbor_dist = torch.tensor(dist).float().to(gaussians.get_xyz.device)
@@ -154,7 +155,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
         if opt.pretrain == iteration:
             print("[Training]::step 2 is over, now update the mask")
-            import open3d as o3d
 
             with torch.no_grad():
                 _, _, (d_xyz, d_rotations) = deformGS.step(gaussians)
@@ -172,8 +172,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 mask_u = np.bitwise_and(mask_r, mask_x)
                 xyz = gaussians.get_xyz.detach()
                 deformed_xyz = xyz + d_xyz.detach()
-                deformed_xyz = deformed_xyz[mask_u == 1].cpu().numpy()
-                _, deformed_xyz_pcd_tree = construct_tree(deformed_xyz)
+                deformed_xyz = deformed_xyz[mask_u == 1].detach()
 
             # data = {
             #     "gaussians": gaussians,
@@ -294,7 +293,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 new_xyz, neighbor_indices, neighbor_dist, neighbor_weight
             )
 
-        loss = loss_end + loss_start + loss_arap
+        loss_cd = 0.0
+        if opt.pretrain < iteration < opt.update_params:
+            source_xyz = new_xyz[gaussians.get_movable_mask == 1]
+            loss_cd = chamfer_distance_loss(deformed_xyz, source_xyz)
+
+        loss = loss_end + loss_start + loss_arap + loss_cd
         loss.backward()
 
         iter_end.record()
@@ -317,14 +321,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 progress_bar.close()
 
             # ---------------------- training report -----------------------------
+            losses = {
+                "start": loss_start,
+                "end": loss_end,
+                "arap": loss_arap,
+                "cd": loss_cd,
+            }
             if opt.tb_writer and (iteration % opt.report_interval == 0):
                 training_report(
                     tb_writer,
                     iteration,
                     iter_start.elapsed_time(iter_end),
-                    loss_start,
-                    loss_end,
-                    loss_arap,
+                    losses,
                     gaussians.get_xyz.shape[0],
                     gaussians.get_opacity,
                     revolute,
@@ -577,20 +585,15 @@ def training_report(
     tb_writer,
     iteration,
     elapsed,
-    u_loss,
-    m_loss,
-    rigid_loss,
+    losses,
     gs_num,
     opacity,
     revolute,
 ):
     if tb_writer:
-        ml = m_loss.item() if isinstance(m_loss, torch.Tensor) else m_loss
-        ul = u_loss.item() if isinstance(u_loss, torch.Tensor) else u_loss
-
-        tb_writer.add_scalar("train_loss_patches/m_loss", ml, iteration)
-        tb_writer.add_scalar("train_loss_patches/u_loss", ul, iteration)
-        tb_writer.add_scalar("train_loss_patches/arap_loss", rigid_loss, iteration)
+        for name, loss in losses.items():
+            loss = loss.item() if isinstance(loss, torch.Tensor) else loss
+            tb_writer.add_scalar(f"train_loss_patches/{name}", loss, iteration)
 
         tb_writer.add_scalar("iter_time", elapsed, iteration)
         tb_writer.add_histogram("scene/opacity_histogram", opacity, iteration)
