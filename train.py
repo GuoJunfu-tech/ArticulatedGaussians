@@ -23,13 +23,13 @@ import uuid
 
 from utils.loss_utils import ll1_ssim_loss, l1_loss, arap_loss, chamfer_distance_loss
 from gaussian_renderer import render, network_gui
-from scene import Scene, GaussianModel, DeformModel, Revolute, DeformGS
+from scene import Scene, GaussianModel, DeformModel, Revolute, Prismatic, DeformGS
 from utils.general_utils import safe_state, get_linear_noise_func
 from utils.image_utils import psnr
 from utils.classification_utils import build_mask
 from utils.viewpoint_utils import ViewpointLoader
 from utils.visualization_utils import render_results
-from utils.knn_utils import knn, construct_tree
+from utils.knn_utils import knn
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
 try:
@@ -51,6 +51,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
     deformArti = DeformModel(opt)
     revolute = Revolute()
+    prismatic = Prismatic()
 
     scene_start = Scene(dataset, gaussians, status="start")
     scene_end = Scene(dataset, gaussians, status="end")
@@ -82,21 +83,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     # is_end_frame_with_grad = False
     # grad_counter = 0
 
+    arti_params = prismatic
     for iteration in range(start, end + 1):
         iter_start.record()
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
 
         if iteration == end:
-            # mask, centers = build_mask(factors.detach().cpu().numpy())
-            # mask = torch.tensor(
-            #     mask, device="cuda", dtype=torch.float32, requires_grad=False
-            # )
             # deform.save_weights(args.model_path, iteration)
-            print(f"predicted articulated params:")
-            print(
-                f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
-            )
             if end == opt.update_mask:
                 # with open("grads.pkl", "wb") as f:
                 #     grads["gaussians"] = gaussians
@@ -107,32 +101,32 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     viewpoint_loader.get_cameras("start"),
                     gaussians,
                     deform,
-                    revolute,
+                    arti_params,
                     mask,
                     pipe,
                     background,
                     type="gif",
                 )
-            _, _, factors = render_results(
-                viewpoint_loader.get_cameras("start"),
-                gaussians,
-                deform,
-                revolute,
-                mask,
-                pipe,
-                background,
-                type="img",
-            )
+            # _, _, factors = render_results(
+            #     viewpoint_loader.get_cameras("start"),
+            #     gaussians,
+            #     deform,
+            #     revolute,
+            #     mask,
+            #     pipe,
+            #     background,
+            #     type="img",
+            # )
 
             data = {
                 "gaussians": gaussians,
                 "mask": gaussians.get_movable_mask,
-                "factor": factors,
+                # "factor": factors,
                 "deformModel": deform,
-                "params": {
-                    "axis": revolute.axis.tolist(),
-                    "pivot": revolute.pivot.tolist(),
-                },
+                # "params": {
+                #     "axis": revolute.axis.tolist(),
+                #     "pivot": revolute.pivot.tolist(),
+                # },
             }
             with open("./stage_3.pkl", "wb") as f:
                 pickle.dump(data, f)
@@ -190,19 +184,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             #     print(" stage 2 data saved")
 
             gaussians.initialize_mask(mask_u)
-            revolute.set_theta(math.pi / 2)  # TODO delete
             continue
 
         if iteration == opt.update_params:
             print("[Training]::step 3 is over, now update the articulated params")
-            print(
-                f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
-            )
+            # print(
+            #     f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
+            # )
             render_results(
                 viewpoint_loader.get_cameras("start"),
                 gaussians,
                 deform,
-                revolute,
+                arti_params,
                 mask,
                 pipe,
                 background,
@@ -235,7 +228,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         # before pretrain, we do not train the articulated params
         if iteration > opt.only_train_single_frame:
             deform = deformGS if iteration < opt.pretrain else deformArti
-            new_xyz, new_rotations, _ = deform.step(gaussians, revolute)
+            new_xyz, new_rotations, _ = deform.step(gaussians, arti_params)
 
         # ---------------------- render --------------------------
         loss_start = 0.0
@@ -335,7 +328,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     losses,
                     gaussians.get_xyz.shape[0],
                     gaussians.get_opacity,
-                    revolute,
+                    arti_params,
                 )
             if opt.is_eval:
                 if iteration in testing_iterations:
@@ -350,7 +343,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                         render,
                         (pipe, background),
                         deform,
-                        revolute,
+                        arti_params,
                         tb_writer,
                         dataset.load2gpu_on_the_fly,
                         is_first_test,
@@ -422,14 +415,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 deform.update_learning_rate(iteration)
 
                 if opt.pretrain < iteration:
-                    revolute.axis_pivot_optimizer.step()
-                    revolute.axis_pivot_optimizer.zero_grad()
-                    revolute.axis_pivot_scheduler.step()
-
-                if opt.pretrain < iteration:
-                    revolute.theta_optimizer.step()
-                    revolute.theta_optimizer.zero_grad()
-                    revolute.theta_scheduler.step()
+                    arti_params.optimizer.step()
+                    arti_params.optimizer.zero_grad()
+                    arti_params.scheduler.step()
 
             if (iteration < opt.only_train_single_frame) or (
                 iteration > opt.update_params
@@ -588,7 +576,7 @@ def training_report(
     losses,
     gs_num,
     opacity,
-    revolute,
+    arti_params,
 ):
     if tb_writer:
         for name, loss in losses.items():
@@ -599,13 +587,13 @@ def training_report(
         tb_writer.add_histogram("scene/opacity_histogram", opacity, iteration)
         tb_writer.add_scalar("total_points", gs_num, iteration)
 
-        for i in range(3):
-            tb_writer.add_scalar(
-                "revolute/axis_{}".format(i), revolute.axis[i], iteration
-            )
-            tb_writer.add_scalar(
-                "revolute/pivot_{}".format(i), revolute.pivot[i], iteration
-            )
+        # for i in range(3):
+        #     tb_writer.add_scalar(
+        #         "revolute/axis_{}".format(i), revolute.axis[i], iteration
+        #     )
+        #     tb_writer.add_scalar(
+        #         "revolute/pivot_{}".format(i), revolute.pivot[i], iteration
+        #     )
 
 
 if __name__ == "__main__":
@@ -622,6 +610,7 @@ if __name__ == "__main__":
         nargs="+",
         type=int,
         default=[6000, 7000, 8000, 9000, 11000, 12000, 14000, 16000, 20000, 24000],
+        # default = [20000,]
     )
     parser.add_argument(
         "--save_iterations",

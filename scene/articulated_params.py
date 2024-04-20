@@ -3,15 +3,52 @@ import math
 from typing import Union
 
 
+def float_to_torch(value: float) -> torch.Tensor:
+    return torch.tensor([value], dtype=torch.float32, requires_grad=True, device="cuda")
+
+
+class Prismatic:
+    def __init__(self) -> None:
+        self._type = "prismatic"
+        self._axis = torch.tensor(
+            [1.0, 0.0, 0.0], dtype=torch.float32, requires_grad=True, device="cuda"
+        )
+        self._dist = torch.tensor(
+            [0.0], dtype=torch.float32, requires_grad=True, device="cuda"
+        )
+        self.optimizer = torch.optim.Adam([self._axis, self._dist], lr=0.05, eps=2e-15)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(
+            self.optimizer, step_size=100, gamma=0.8
+        )
+
+    @property
+    def type(self):
+        return self._type
+
+    @property
+    def axis(self):
+        return self._axis / torch.linalg.norm(self._axis)
+
+    @property
+    def dist(self):
+        return self._dist
+
+    @dist.setter
+    def dist(self, dist: float):
+        self._dist = float_to_torch(dist)
+
+
 class Revolute:
     def __init__(self) -> None:
         # Initial
+        self._type = "revolute"
         self._axis = torch.tensor(
             [0, 1, 0],
             dtype=torch.float32,
             requires_grad=True,
             device="cuda",
         )
+        self._theta = float_to_torch(math.pi / 2)
         # gt: [0.73, 0.175, -0.152],
         self._pivot = torch.tensor(
             [0.0, 0.0, 0.0],
@@ -19,21 +56,16 @@ class Revolute:
             requires_grad=True,
             device="cuda",
         )
-        self.axis_pivot_optimizer = torch.optim.Adam(
-            [self._axis, self._pivot], lr=0.05, eps=2e-15
+        self.optimizer = torch.optim.Adam(
+            [self._axis, self._pivot, self._theta], lr=0.05, eps=2e-15
         )
-        self.axis_pivot_scheduler = torch.optim.lr_scheduler.StepLR(
-            self.axis_pivot_optimizer, step_size=100, gamma=0.8
+        self.scheduler = torch.optim.lr_scheduler.StepLR(
+            self.optimizer, step_size=100, gamma=0.8
         )
 
-        self._theta = None
-
-    def set_theta(self, theta):
-        self._theta = self.float_to_torch(theta)
-        self.theta_optimizer = torch.optim.Adam([self._theta], lr=0.005, eps=2e-15)
-        self.theta_scheduler = torch.optim.lr_scheduler.StepLR(
-            self.theta_optimizer, step_size=100, gamma=0.9
-        )
+    @property
+    def type(self):
+        return self._type
 
     def reset_param_optimizer(self):
         self.axis_pivot_optimizer = torch.optim.Adam(
@@ -49,13 +81,7 @@ class Revolute:
 
     @theta.setter
     def theta(self, theta: float):
-        self._theta = self.float_to_torch(theta)
-
-    @staticmethod
-    def float_to_torch(value: float) -> torch.Tensor:
-        return torch.tensor(
-            [value], dtype=torch.float32, requires_grad=True, device="cuda"
-        )
+        self._theta = float_to_torch(theta)
 
     @staticmethod
     def list_to_torch(values: list) -> torch.Tensor:
@@ -65,7 +91,7 @@ class Revolute:
 
     @property
     def axis(self):
-        return self._axis
+        return self._axis / torch.linalg.norm(self._axis)
 
     @axis.setter
     def axis(self, axis: Union[torch.Tensor, list]):

@@ -2,13 +2,13 @@ import random
 import math
 import torch
 
-from utils.rotation_utils import RotationOperator
+from utils.deform_utils import ArticulatedOperator
 
 
 def test_rotation_operator():
     # theta = random.rand() * math.pi * 2
 
-    rotate = RotationOperator()
+    rotate = ArticulatedOperator()
     for test_id in range(10):
         print(f"[testRotationOperator]::Testing with {test_id} intervals")
         # setup
@@ -33,10 +33,12 @@ def test_rotation_operator():
         for i in range(intervals):
             # print(f"xyz: {xyz}")
             # print(f"xyz_matrix: {xyz_matrix}")
-            xyz = rotate.get_new_location(xyz, axis, pivot, theta)
+            xyz = rotate.get_new_location_revolute(xyz, axis, pivot, theta)
             q = rotate.get_new_quaternion(q, axis, theta)
 
-            xyz_matrix = rotate.get_new_location(xyz_matrix, axis, pivot, theta_matrix)
+            xyz_matrix = rotate.get_new_location_revolute(
+                xyz_matrix, axis, pivot, theta_matrix
+            )
             q_matrix = rotate.get_new_quaternion(q_matrix, axis, theta_matrix)
 
         # test

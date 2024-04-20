@@ -1,10 +1,18 @@
 import numpy as np
 import torch
 import math
-from typing import Union
 
 
-class RotationOperator:
+class ArticulatedOperator:
+    # ------------ Prismatic --------------------------------
+    def get_new_location_prismatic(self, x, axis, dist):
+        assert abs(torch.linalg.norm(axis) - 1) < 1e-2
+        N = x.shape[0]
+        axis = axis.unsqueeze(0)
+        dist = dist.view(N, 1)
+        return x + axis * dist
+
+    # ------------ Revolute ---------------------------------
     @staticmethod
     def get_rotation_matrix(axis: torch.Tensor, theta: torch.Tensor):
         axis = axis / torch.linalg.norm(axis)  # normalize
@@ -48,7 +56,7 @@ class RotationOperator:
 
         return R
 
-    def get_new_location(self, x, axis, pivot_point, theta):
+    def get_new_location_revolute(self, x, axis, pivot_point, theta):
         """
         Computes the new location of a point after rotation in a revolute joint.
 
@@ -135,7 +143,7 @@ if __name__ == "__main__":
     axis = axis / torch.norm(axis, dim=1, keepdim=True)
     theta = 0.5  # Rotation angle in radians
 
-    rotate = RotationOperator()
+    rotate = ArticulatedOperator()
     q_updated = rotate.get_new_quaternion(q, axis, theta)
 
     print(q_updated)

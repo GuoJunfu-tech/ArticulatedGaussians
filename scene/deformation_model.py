@@ -5,7 +5,7 @@ from utils.time_utils import DeformNetwork, MovableNetwork
 import os
 from utils.system_utils import searchForMaxIteration
 from utils.general_utils import get_expon_lr_func
-from utils.rotation_utils import RotationOperator
+from utils.deform_utils import ArticulatedOperator
 import math
 
 
@@ -15,7 +15,7 @@ class DeformModel:
         self.movable_network = MovableNetwork().cuda()
         self.optimizer = None
         self.spatial_lr_scale = 5
-        self.deform_operator = RotationOperator()
+        self.deform_operator = ArticulatedOperator()
         self.train_setting(training_args)
 
     def train_setting(self, training_args):
@@ -35,13 +35,11 @@ class DeformModel:
             max_steps=training_args.deform_lr_max_steps,
         )
 
-    def step(self, gaussians, revolute, keep_gs_grad=False):
+    def step(self, gaussians, arti_param, keep_gs_grad=False):
         return self.deform(
             gaussians.get_xyz,
             gaussians.get_rotation,
-            revolute.axis,
-            revolute.pivot,
-            revolute.theta,
+            arti_param,
             gaussians.get_movable_mask,
             keep_gs_grad=keep_gs_grad,
         )
@@ -50,41 +48,52 @@ class DeformModel:
         self,
         xyz,
         rotation,
-        axis,
-        pivot,
-        theta,
+        arti_param,
         factor=None,
         keep_gs_grad=False,
     ):
-        if not keep_gs_grad:
-            xyz = xyz.detach()
-            quaternions = rotation.detach()
-        else:
-            quaternions = rotation
-
         if factor is not None:
             assert factor.shape[0] == xyz.shape[0]
             movable_factor = factor
         else:
             movable_factor = self.movable_network(xyz)
 
-        if theta is None:
-            theta = movable_factor * math.pi
+        if not keep_gs_grad:
+            xyz = xyz.detach()
+            quaternions = rotation.detach()
         else:
-            theta = theta * movable_factor
+            quaternions = rotation
+
+        if arti_param.type == "revolute":
+            axis = arti_param.axis
+            pivot = arti_param.pivot
+            theta = arti_param.theta
+            if theta is None:
+                theta = movable_factor * math.pi  # TODO check why?
+            else:
+                theta = theta * movable_factor
+
+            axis = axis / torch.linalg.norm(axis)
+            new_xyz = self.deform_operator.get_new_location_revolute(
+                xyz, axis, pivot, theta
+            )
+            new_rotations = self.deform_operator.get_new_quaternion(
+                quaternions, axis, theta
+            )  # return the intermediate quaternion depend on movable_factor
+
+        elif arti_param.type == "prismatic":
+            axis = arti_param.axis
+            dist = arti_param.dist
+            dist = dist * movable_factor
+            new_xyz = self.deform_operator.get_new_location_prismatic(xyz, axis, dist)
+            new_rotations = quaternions
+        else:
+            raise ValueError("unrecognized articulated params!")
 
         # if is_render:
         #     movable_factor = (movable_factor > 1e-3).float()
 
-        axis = axis / torch.linalg.norm(axis)
-        new_xyz = self.deform_operator.get_new_location(xyz, axis, pivot, theta)
-
-        moved_quaternion = self.deform_operator.get_new_quaternion(
-            quaternions, axis, theta
-        )  # return the intermediate quaternion depend on movable_factor
-
         # new_xyz = xyz + movable_factor * (moved_xyz - xyz)
-        new_rotations = moved_quaternion
         return new_xyz, new_rotations, movable_factor
 
     def save_weights(self, model_path, iteration):

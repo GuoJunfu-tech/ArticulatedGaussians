@@ -10,21 +10,18 @@ def render_results(
     viewpoint_cams,
     gaussians,
     deformModel,
-    revoluteParams,
+    arti_params,
     factors,
     pipe,
     background,
     type="gif",
 ):
-    try:
-        theta = (
-            revoluteParams.theta.detach().cpu().float()
-            if revoluteParams.theta
-            else None
-        )
-        interval = theta / 20
-    except:
-        pass
+    if arti_params.type == "prismatic":
+        dist = arti_params.dist.detach().cpu().float()
+
+    elif arti_params.type == "revolute":
+        theta = arti_params.theta.detach().cpu().float()
+
     with torch.no_grad():
         for cid, cam in enumerate(viewpoint_cams):
             if cid == 20:
@@ -35,9 +32,13 @@ def render_results(
 
                 images = []
                 for i in range(k):
-                    revoluteParams.set_theta(i * interval)
+                    if arti_params.type == "prismatic":
+                        arti_params.dist = i * dist / k
+
+                    if arti_params.type == "revolute":
+                        arti_params.theta = i * theta / k
                     new_xyz, new_rotations, _ = deformModel.step(
-                        gaussians, revoluteParams, keep_gs_grad=False
+                        gaussians, arti_params, keep_gs_grad=False
                     )
                     render_pkg_re = render(
                         cam,
@@ -66,6 +67,7 @@ def render_results(
                     loop=0,
                 )
             elif type == "img":
+                raise ValueError("Not implemented")  # TODO implement this
                 # revoluteParams.set_theta(theta)
                 save_path = os.path.join(os.getcwd(), f"rendered_img/static_{cid}.png")
                 new_xyz, new_rotations, factors = deformModel.deform(
