@@ -84,6 +84,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     # grad_counter = 0
 
     arti_params = prismatic
+
     for iteration in range(start, end + 1):
         iter_start.record()
 
@@ -92,11 +93,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         if iteration == end:
             # deform.save_weights(args.model_path, iteration)
             if end == opt.update_mask:
-                # with open("grads.pkl", "wb") as f:
-                #     grads["gaussians"] = gaussians
-                #     pickle.dump(grads, f)
-                #     print("grad data saved")
-
                 render_results(
                     viewpoint_loader.get_cameras("start"),
                     gaussians,
@@ -107,30 +103,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     background,
                     type="gif",
                 )
-            # _, _, factors = render_results(
-            #     viewpoint_loader.get_cameras("start"),
-            #     gaussians,
-            #     deform,
-            #     revolute,
-            #     mask,
-            #     pipe,
-            #     background,
-            #     type="img",
-            # )
 
-            data = {
-                "gaussians": gaussians,
-                "mask": gaussians.get_movable_mask,
-                # "factor": factors,
-                "deformModel": deform,
-                # "params": {
-                #     "axis": revolute.axis.tolist(),
-                #     "pivot": revolute.pivot.tolist(),
-                # },
-            }
-            with open("./stage_3.pkl", "wb") as f:
-                pickle.dump(data, f)
-                print("data saved")
+                save_output(gaussians, arti_params, iterations, op.output)
 
             print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
             exit()
@@ -368,10 +342,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
                 # FIXME sick code! should update together!!
 
-                # if iteration in saving_iterations:
-                #     print("\n[ITER {}] Saving Gaussians".format(iteration))
-                #     scene.save(iteration)
-                #     deform.save_weights(args.model_path, iteration)
+                if iteration in saving_iterations:
+                    print("\n[ITER {}] Saving Gaussians".format(iteration))
+                    scene_start.save(iteration)
 
             if (iteration < opt.only_train_single_frame) or (
                 iteration > opt.update_params
@@ -569,6 +542,10 @@ def eval(
     return test_psnr
 
 
+def save_output(gaussians, arti_params, iteration, path):
+    pass
+
+
 def training_report(
     tb_writer,
     iteration,
@@ -609,14 +586,21 @@ if __name__ == "__main__":
         "--test_iterations",
         nargs="+",
         type=int,
-        default=[6000, 7000, 8000, 9000, 11000, 12000, 14000, 16000, 20000, 24000],
+        default=[
+            9000,
+            11000,
+            14000,
+            20000,
+            30000,
+            34000,
+        ],
         # default = [20000,]
     )
     parser.add_argument(
         "--save_iterations",
         nargs="+",
         type=int,
-        default=[15_000, 20_000, 30_000, 40000],
+        default=[13_000, 20_000, 30_000, 35000],
     )
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(sys.argv[1:])

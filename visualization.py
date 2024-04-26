@@ -279,8 +279,8 @@ if __name__ == "__main__":
     # factors = (ndr > 1e-2).to(torch.float32).to("cuda")
     # mask = (ndr > 1e-2).to(gaussians.get_xyz.device, gaussians.get_xyz.dtype)
     # print(mask)
-    # draw_graph(xyz, ndr)
-    # draw_graph(xyz, ndx)
+    draw_graph(xyz, ndr)
+    draw_graph(xyz, ndx)
     # mask_x, _ = build_mask(ndx.reshape(-1, 1), "gmm", 20)
     mask_x = ndx > 2e-1
     mask_r, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
@@ -291,8 +291,8 @@ if __name__ == "__main__":
     mdx = dx.detach().cpu().numpy()[mask_union == 1]
 
     pcd_u = draw_one_color(unmove_pts, dx=0)
-    pcd_m = draw_one_color(move_pts, dx=2)
-    pcd_after_move = draw_one_color(move_pts + mdx, dx=2)
+    pcd_m = draw_one_color(move_pts, dx=1.5)
+    pcd_after_move = draw_one_color(move_pts + mdx, dx=3)
 
     dist = chamfer_distance_open3d(pcd_after_move, pcd_m)
     print(dist)

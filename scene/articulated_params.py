@@ -1,6 +1,7 @@
 import torch
 import math
 from typing import Union
+import json
 
 
 def float_to_torch(value: float) -> torch.Tensor:
@@ -36,6 +37,15 @@ class Prismatic:
     @dist.setter
     def dist(self, dist: float):
         self._dist = float_to_torch(dist)
+
+    def save_json(self, path):
+        data = {
+            "type": self._type,
+            "axis": self._axis.detach().cpu().numpy(),
+            "dist": self._dist.detach().cpu().numpy(),
+        }
+        with open(path, "w") as f:
+            json.dump(data, f)
 
 
 class Revolute:
@@ -120,3 +130,12 @@ class Revolute:
             raise ValueError("[ERROR]::Wrong type of the axis!")
 
         self._pivot = pivot
+
+    def save_json(self, path):
+        data = {
+            "type": self._type,
+            "axis": self._axis.detach().cpu().numpy(),
+            "dist": self._dist.detach().cpu().numpy(),
+        }
+        with open(path, "w") as f:
+            json.dump(data, f)
