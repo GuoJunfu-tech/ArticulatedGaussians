@@ -204,6 +204,8 @@ class GaussianModel:
             l.append("scale_{}".format(i))
         for i in range(self._rotation.shape[1]):
             l.append("rot_{}".format(i))
+        # for i in range(len(self._movable_mask)):
+        l.append("mask")
         return l
 
     def save_ply(self, path):
@@ -230,7 +232,7 @@ class GaussianModel:
         opacities = self._opacity.detach().cpu().numpy()
         scale = self._scaling.detach().cpu().numpy()
         rotation = self._rotation.detach().cpu().numpy()
-        mask = self._movable_mask.detach().cpu().numpy()
+        mask = self._movable_mask.detach().cpu().unsqueeze(1).numpy()
 
         dtype_full = [
             (attribute, "f4") for attribute in self.construct_list_of_attributes()

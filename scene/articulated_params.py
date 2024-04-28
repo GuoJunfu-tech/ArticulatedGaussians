@@ -2,6 +2,7 @@ import torch
 import math
 from typing import Union
 import json
+import numpy as np
 
 
 def float_to_torch(value: float) -> torch.Tensor:
@@ -41,8 +42,8 @@ class Prismatic:
     def save_json(self, path):
         data = {
             "type": self._type,
-            "axis": self._axis.detach().cpu().numpy(),
-            "dist": self._dist.detach().cpu().numpy(),
+            "axis": self._axis.detach().cpu().numpy().tolist(),
+            "dist": self._dist.detach().cpu().numpy().item(),
         }
         with open(path, "w") as f:
             json.dump(data, f)
@@ -53,12 +54,12 @@ class Revolute:
         # Initial
         self._type = "revolute"
         self._axis = torch.tensor(
-            [0, 1, 0],
+            [0, 1.0, 0],
             dtype=torch.float32,
             requires_grad=True,
             device="cuda",
         )
-        self._theta = float_to_torch(math.pi / 2)
+        self._theta = float_to_torch(0.0)
         # gt: [0.73, 0.175, -0.152],
         self._pivot = torch.tensor(
             [0.0, 0.0, 0.0],
@@ -87,11 +88,11 @@ class Revolute:
 
     @property
     def theta(self):
-        return self._theta  # TODO check if here need to add tanh
+        return self._theta * math.pi  # TODO check if here need to add tanh
 
     @theta.setter
     def theta(self, theta: float):
-        self._theta = float_to_torch(theta)
+        self._theta = float_to_torch(theta) * math.pi
 
     @staticmethod
     def list_to_torch(values: list) -> torch.Tensor:
@@ -134,8 +135,9 @@ class Revolute:
     def save_json(self, path):
         data = {
             "type": self._type,
-            "axis": self._axis.detach().cpu().numpy(),
-            "dist": self._dist.detach().cpu().numpy(),
+            "axis": self._axis.detach().cpu().tolist(),
+            "pivot": [0, 0, 0],
+            "theta": self._theta.detach().cpu().item() * math.pi,
         }
         with open(path, "w") as f:
             json.dump(data, f)

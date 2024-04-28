@@ -83,7 +83,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     # is_end_frame_with_grad = False
     # grad_counter = 0
 
-    arti_params = prismatic
+    arti_params = revolute
 
     for iteration in range(start, end + 1):
         iter_start.record()
@@ -104,7 +104,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     type="gif",
                 )
 
-                save_output(gaussians, arti_params, iterations, op.output)
+            print("Training finished.")
+            scene_start.save(iteration)
+            save_motion_path = os.path.join(scene_start.model_path, "motion.json")
+            arti_params.save_json(save_motion_path)
 
             print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
             exit()
@@ -136,26 +139,26 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 ndr = (ndr - min(ndr)) / (max(ndr) - min(ndr))
 
                 mask_r, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
-                mask_x = ndx > 1e-1
+                mask_x = ndx > 4e-1
                 mask_u = np.bitwise_and(mask_r, mask_x)
                 xyz = gaussians.get_xyz.detach()
                 deformed_xyz = xyz + d_xyz.detach()
                 deformed_xyz = deformed_xyz[mask_u == 1].detach()
 
-            # data = {
-            #     "gaussians": gaussians,
-            #     "dx": d_xyz,
-            #     "dr": d_rotations,
-            #     "deformModel": deform,
-            #     "params": {
-            #         "axis": revolute.axis.tolist(),
-            #         "pivot": revolute.pivot.tolist(),
-            #     },
-            # }
+            data = {
+                "gaussians": gaussians,
+                "dx": d_xyz,
+                "dr": d_rotations,
+                "deformModel": deform,
+                "params": {
+                    "axis": revolute.axis.tolist(),
+                    "pivot": revolute.pivot.tolist(),
+                },
+            }
 
-            # with open("./stage_2.pkl", "wb") as f:
-            #     pickle.dump(data, f)
-            #     print(" stage 2 data saved")
+            with open("./stage_2.pkl", "wb") as f:
+                pickle.dump(data, f)
+                print(" stage 2 data saved")
 
             gaussians.initialize_mask(mask_u)
             continue
@@ -266,6 +269,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             loss_cd = chamfer_distance_loss(deformed_xyz, source_xyz)
 
         loss = loss_end + loss_start + loss_arap + loss_cd
+        # loss = loss_end + loss_start + loss_cd
         loss.backward()
 
         iter_end.record()
@@ -327,6 +331,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                         best_psnr = cur_psnr
                         best_iteration = iteration
 
+            if iteration in saving_iterations:
+                print("\n[ITER {}] Saving Gaussians".format(iteration))
+                scene_start.save(iteration)
+                save_motion_path = os.path.join(
+                    scene_start.model_path, f"motion_{iteration}.json"
+                )
+                arti_params.save_json(save_motion_path)
+
             # --------------------- Densification --------------------------
             # Keep track of max radii in image-space for pruning
             is_densify = False
@@ -341,10 +353,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 is_densify = True
 
                 # FIXME sick code! should update together!!
-
-                if iteration in saving_iterations:
-                    print("\n[ITER {}] Saving Gaussians".format(iteration))
-                    scene_start.save(iteration)
 
             if (iteration < opt.only_train_single_frame) or (
                 iteration > opt.update_params
@@ -542,10 +550,6 @@ def eval(
     return test_psnr
 
 
-def save_output(gaussians, arti_params, iteration, path):
-    pass
-
-
 def training_report(
     tb_writer,
     iteration,
@@ -588,9 +592,11 @@ if __name__ == "__main__":
         type=int,
         default=[
             9000,
-            11000,
+            12000,
             14000,
+            17000,
             20000,
+            25000,
             30000,
             34000,
         ],
@@ -600,13 +606,11 @@ if __name__ == "__main__":
         "--save_iterations",
         nargs="+",
         type=int,
-        default=[13_000, 20_000, 30_000, 35000],
+        default=[14_000, 20_000, 25000, 30_000, 35000],
     )
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
-
-    print("Optimizing " + args.model_path)
 
     # Initialize system state (RNG)
     safe_state(args.quiet)
