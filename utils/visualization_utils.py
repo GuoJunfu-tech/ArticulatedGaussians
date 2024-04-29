@@ -15,6 +15,7 @@ def render_results(
     pipe,
     background,
     type="gif",
+    note=None,
 ):
     if arti_params.type == "prismatic":
         dist = arti_params.dist.detach().cpu().float()
@@ -54,7 +55,9 @@ def render_results(
                     img = Image.fromarray(np.uint8(image_np * 255), "RGB")
                     images.append(img)
 
-                save_path = os.path.join(os.getcwd(), f"rendered_img/dynamic_{cid}.gif")
+                save_path = os.path.join(
+                    os.getcwd(), f"rendered_img/dynamic_{cid}_{note}.gif"
+                )
                 # if not os.path.exists(save_path):
                 #     raise ValueError(f"Could not find path {save_path}")
                 print(f"saving results {save_path}")

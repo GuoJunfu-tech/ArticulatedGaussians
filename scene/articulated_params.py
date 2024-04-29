@@ -88,11 +88,11 @@ class Revolute:
 
     @property
     def theta(self):
-        return self._theta * math.pi  # TODO check if here need to add tanh
+        return self._theta  # TODO check if here need to add tanh
 
     @theta.setter
     def theta(self, theta: float):
-        self._theta = float_to_torch(theta) * math.pi
+        self._theta = float_to_torch(theta)
 
     @staticmethod
     def list_to_torch(values: list) -> torch.Tensor:
@@ -137,7 +137,15 @@ class Revolute:
             "type": self._type,
             "axis": self._axis.detach().cpu().tolist(),
             "pivot": [0, 0, 0],
-            "theta": self._theta.detach().cpu().item() * math.pi,
+            "theta": self._theta.detach().cpu().item(),
         }
         with open(path, "w") as f:
             json.dump(data, f)
+
+    def theta_normalization(self):
+        normalized_angle = self._theta % (2 * math.pi)  # 将角度对 2*pi 取余数
+        if normalized_angle > math.pi:
+            normalized_angle -= 2 * math.pi  # 如果大于 pi，减去 2*pi
+        elif normalized_angle < -math.pi:
+            normalized_angle += 2 * math.pi  # 如果小于 -pi，加上 2*pi
+        self._theta = normalized_angle

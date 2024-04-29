@@ -26,7 +26,7 @@ from gaussian_renderer import render, network_gui
 from scene import Scene, GaussianModel, DeformModel, Revolute, Prismatic, DeformGS
 from utils.general_utils import safe_state, get_linear_noise_func
 from utils.image_utils import psnr
-from utils.classification_utils import build_mask
+from utils.classification_utils import build_mask, mask_init
 from utils.viewpoint_utils import ViewpointLoader
 from utils.visualization_utils import render_results
 from utils.knn_utils import knn
@@ -102,6 +102,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     pipe,
                     background,
                     type="gif",
+                    note="final",
                 )
 
             print("Training finished.")
@@ -131,34 +132,26 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 _, _, (d_xyz, d_rotations) = deformGS.step(gaussians)
                 ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
                 ndr = torch.norm(d_rotations, dim=-1).detach().cpu().numpy()
-                # mask = (ndr > 1e-2).to(
-                #     gaussians.get_xyz.device, gaussians.get_xyz.dtype
-                # )
 
-                ndx = (ndx - min(ndx)) / (max(ndx) - min(ndx))
-                ndr = (ndr - min(ndr)) / (max(ndr) - min(ndr))
-
-                mask_r, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
-                mask_x = ndx > 4e-1
-                mask_u = np.bitwise_and(mask_r, mask_x)
+                mask_u = mask_init(ndr, ndx, 4e-1)
                 xyz = gaussians.get_xyz.detach()
                 deformed_xyz = xyz + d_xyz.detach()
                 deformed_xyz = deformed_xyz[mask_u == 1].detach()
 
-            data = {
-                "gaussians": gaussians,
-                "dx": d_xyz,
-                "dr": d_rotations,
-                "deformModel": deform,
-                "params": {
-                    "axis": revolute.axis.tolist(),
-                    "pivot": revolute.pivot.tolist(),
-                },
-            }
+            # data = {
+            #     "gaussians": gaussians,
+            #     "dx": d_xyz,
+            #     "dr": d_rotations,
+            #     "deformModel": deform,
+            #     "params": {
+            #         "axis": revolute.axis.tolist(),
+            #         "pivot": revolute.pivot.tolist(),
+            #     },
+            # }
 
-            with open("./stage_2.pkl", "wb") as f:
-                pickle.dump(data, f)
-                print(" stage 2 data saved")
+            # with open("./stage_2.pkl", "wb") as f:
+            #     pickle.dump(data, f)
+            #     print(" stage 2 data saved")
 
             gaussians.initialize_mask(mask_u)
             continue
@@ -168,6 +161,22 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             # print(
             #     f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
             # )
+            with torch.no_grad():
+                _, _, (d_xyz, d_rotations) = deformGS.step(gaussians)
+                ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
+                ndr = torch.norm(d_rotations, dim=-1).detach().cpu().numpy()
+
+                mask_u = mask_init(ndr, ndx, 1e-1)
+                gaussians.initialize_mask(mask_u)
+
+                print(f"---------------------------------")
+                print(f"arti type: {arti_params.type}")
+                print(arti_params.theta)
+                print(f"---------------------------------")
+                # if arti_params.type == "revolute":
+                arti_params.theta_normalization()
+                print(arti_params.theta)
+
             render_results(
                 viewpoint_loader.get_cameras("start"),
                 gaussians,
@@ -177,6 +186,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 pipe,
                 background,
                 type="gif",
+                note="opt_param",
             )
             continue
 

@@ -12,3 +12,4 @@ submodules
 rendered_img
 *.pkl
 load_data
+run_all.py

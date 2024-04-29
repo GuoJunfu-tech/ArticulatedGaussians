@@ -143,6 +143,16 @@ def build_mask(factors, method="gmm", max_iters=20):
     return mask, centers
 
 
+def mask_init(ndr, ndx, ndx_threshold):
+    ndx = (ndx - min(ndx)) / (max(ndx) - min(ndx))
+    ndr = (ndr - min(ndr)) / (max(ndr) - min(ndr))
+
+    mask_r, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
+    mask_x = ndx > ndx_threshold
+    mask_u = np.bitwise_and(mask_r, mask_x)
+    return mask_u
+
+
 if __name__ == "__main__":
     from sklearn.datasets import make_blobs
     import matplotlib.pyplot as plt
