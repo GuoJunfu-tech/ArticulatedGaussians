@@ -94,7 +94,7 @@ class OptimizationParams(ParamGroup):
         self.opacity_lr = 0.05
         self.scaling_lr = 0.001
         self.rotation_lr = 0.001
-        self.movable_lr_init = 0.001
+        self.movable_lr_init = 0.5
         self.movable_lr_final = 0.000001
         self.movable_lr_delay_mult = 0.01
         self.movable_lr_max_steps = 30_000
@@ -108,9 +108,9 @@ class OptimizationParams(ParamGroup):
         self.densify_grad_threshold = 0.0002
 
         self.only_train_single_frame = 5_000
-        self.pretrain = 13_000
-        self.update_params = 18000
-        self.update_mask = 35_000
+        self.pretrain = 20_000
+        self.update_params = 25000
+        self.update_mask = 40_000
 
         self.inverse_deform_interval = 500
 

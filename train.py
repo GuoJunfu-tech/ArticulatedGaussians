@@ -93,6 +93,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         if iteration == end:
             # deform.save_weights(args.model_path, iteration)
             if end == opt.update_mask:
+                object = dataset.model_path.split("/")[-1]
                 render_results(
                     viewpoint_loader.get_cameras("start"),
                     gaussians,
@@ -102,7 +103,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     pipe,
                     background,
                     type="gif",
-                    note="final",
+                    note=f"final_{object}",
                 )
 
             print("Training finished.")
@@ -117,7 +118,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             print("[Training]::step 1 is over, now training deformation net")
             print("[Training]::building knn trees")
             neighbor_sq_dist, neighbor_indices = knn(
-                gaussians.get_xyz.detach().cpu().numpy(), 20
+                gaussians.get_xyz.detach().cpu().numpy(), 50
             )
             weight = np.exp(-20 * neighbor_sq_dist)
             dist = np.sqrt(neighbor_sq_dist)
@@ -133,25 +134,25 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
                 ndr = torch.norm(d_rotations, dim=-1).detach().cpu().numpy()
 
-                mask_u = mask_init(ndr, ndx, 4e-1)
+                mask_u = mask_init(ndr, ndx, 3e-1)  # TODO set optional threshold
                 xyz = gaussians.get_xyz.detach()
                 deformed_xyz = xyz + d_xyz.detach()
                 deformed_xyz = deformed_xyz[mask_u == 1].detach()
 
-            # data = {
-            #     "gaussians": gaussians,
-            #     "dx": d_xyz,
-            #     "dr": d_rotations,
-            #     "deformModel": deform,
-            #     "params": {
-            #         "axis": revolute.axis.tolist(),
-            #         "pivot": revolute.pivot.tolist(),
-            #     },
-            # }
+            data = {
+                "gaussians": gaussians,
+                "dx": d_xyz,
+                "dr": d_rotations,
+                "deformModel": deform,
+                "params": {
+                    "axis": revolute.axis.tolist(),
+                    "pivot": revolute.pivot.tolist(),
+                },
+            }
 
-            # with open("./stage_2.pkl", "wb") as f:
-            #     pickle.dump(data, f)
-            #     print(" stage 2 data saved")
+            with open("./stage_2.pkl", "wb") as f:
+                pickle.dump(data, f)
+                print(" stage 2 data saved")
 
             gaussians.initialize_mask(mask_u)
             continue
@@ -169,13 +170,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 mask_u = mask_init(ndr, ndx, 1e-1)
                 gaussians.initialize_mask(mask_u)
 
-                print(f"---------------------------------")
-                print(f"arti type: {arti_params.type}")
-                print(arti_params.theta)
-                print(f"---------------------------------")
                 # if arti_params.type == "revolute":
                 arti_params.theta_normalization()
-                print(arti_params.theta)
 
             render_results(
                 viewpoint_loader.get_cameras("start"),
@@ -191,6 +187,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             continue
 
         if iteration < opt.only_train_single_frame:
+            if iteration % 1000 == 0:
+                gaussians.oneupSHdegree()  # TODO temporary
+
             viewpoint_cam_start = viewpoint_loader.get_viewpoint_cam(
                 status="start", load2device=dataset.load2gpu_on_the_fly
             )
@@ -207,8 +206,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             viewpoint_cam_start, viewpoint_cam_end = (
                 viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
             )
-            if iteration % 1000 == 0:
-                gaussians.oneupSHdegree()
+            # if iteration % 1000 == 0:
+            # gaussians.oneupSHdegree()
 
         # ------------------- core: deformation ----------------------------
 
@@ -279,7 +278,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             loss_cd = chamfer_distance_loss(deformed_xyz, source_xyz)
 
         loss = loss_end + loss_start + loss_arap + loss_cd
-        # loss = loss_end + loss_start + loss_cd
         loss.backward()
 
         iter_end.record()
@@ -601,14 +599,13 @@ if __name__ == "__main__":
         nargs="+",
         type=int,
         default=[
-            9000,
-            12000,
-            14000,
-            17000,
-            20000,
-            25000,
+            10000,
+            15000,
+            19000,
+            22000,
+            24000,
             30000,
-            34000,
+            38000,
         ],
         # default = [20000,]
     )
@@ -616,7 +613,7 @@ if __name__ == "__main__":
         "--save_iterations",
         nargs="+",
         type=int,
-        default=[14_000, 20_000, 25000, 30_000, 35000],
+        default=[22_000, 25000, 30_000, 35000],
     )
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(sys.argv[1:])
