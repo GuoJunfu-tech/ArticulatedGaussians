@@ -94,7 +94,7 @@ class OptimizationParams(ParamGroup):
         self.opacity_lr = 0.05
         self.scaling_lr = 0.001
         self.rotation_lr = 0.001
-        self.movable_lr_init = 0.5
+        self.movable_lr_init = 0.01
         self.movable_lr_final = 0.000001
         self.movable_lr_delay_mult = 0.01
         self.movable_lr_max_steps = 30_000

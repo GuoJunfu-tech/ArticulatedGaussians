@@ -35,7 +35,7 @@ class DeformModel:
             max_steps=training_args.deform_lr_max_steps,
         )
 
-    def step(self, gaussians, arti_param, keep_gs_grad=False):
+    def step(self, gaussians, arti_param, keep_gs_grad=True):
         return self.deform(
             gaussians.get_xyz,
             gaussians.get_rotation,

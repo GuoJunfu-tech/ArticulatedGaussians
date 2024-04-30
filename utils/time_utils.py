@@ -4,6 +4,52 @@ import torch.nn as nn
 import torch.nn.functional as F
 from utils.rigid_utils import exp_se3
 
+import numpy as np
+from math import ceil
+
+
+class PointEmbed(nn.Module):
+    def __init__(self, data_dim=3, hidden_dim=48, dim=128):
+        super().__init__()
+
+        cos_sin_data_dim = 2 * data_dim
+
+        self.embedding_dim = ceil(hidden_dim // cos_sin_data_dim) * cos_sin_data_dim
+
+        e = (
+            torch.pow(2, torch.arange(self.embedding_dim // cos_sin_data_dim)).float()
+            * np.pi
+        )
+        basis = torch.zeros(
+            [data_dim, data_dim * self.embedding_dim // cos_sin_data_dim]
+        )
+        for i in range(data_dim):
+            basis[i, e.shape[0] * i : e.shape[0] * (i + 1)] = e
+
+        # data_dim x (embedding_dim // cos_sin_data_dim)
+        self.register_buffer("basis", basis)
+
+        self.mlp = nn.Linear(self.embedding_dim + data_dim, dim)
+
+        self.dim = dim
+        return
+
+    @staticmethod
+    def embed(input, basis):
+        projections = torch.einsum("bnd,de->bne", input, basis)
+        embeddings = torch.cat([projections.sin(), projections.cos()], dim=2)
+        return embeddings
+
+    def forward(self, input):
+        # input: B x N x cos_sin_data_dim
+        embed = self.embed(input.unsqueeze(0), self.basis)
+
+        embed = torch.cat([embed, input.unsqueeze(0)], dim=2)
+
+        # B x N x C
+        embed = self.mlp(embed)
+        return embed.squeeze()
+
 
 def get_embedder(multires, i=1):
     if i == -1:
@@ -60,7 +106,7 @@ class DeformNetwork(nn.Module):
     def __init__(
         self,
         D=8,
-        W=256,
+        W=128,
         input_ch=3,
         output_ch=59,
         multires=10,
@@ -75,7 +121,10 @@ class DeformNetwork(nn.Module):
         self.t_multires = 6 if is_blender else 10
         self.skips = [D // 2]
 
-        self.embed_fn, xyz_input_ch = get_embedder(multires, 3)
+        # self.embed_fn, xyz_input_ch = get_embedder(multires, 3)
+        xyz_input_ch = 64
+        self.embbeder = PointEmbed(3, 48, 64)
+        # self.embed_fn, xyz_input_ch = embbeder.forward, 63
         self.input_ch = xyz_input_ch
 
         if is_blender:
@@ -119,7 +168,8 @@ class DeformNetwork(nn.Module):
 
     def forward(self, gaussians):
         x = gaussians.get_xyz.detach()
-        x_emb = self.embed_fn(x)
+        # x_emb = self.embed_fn(x)
+        x_emb = self.embbeder.forward(x)
         h = x_emb
         for i, l in enumerate(self.linear):
             h = self.linear[i](h)
@@ -146,6 +196,7 @@ class DeformNetwork(nn.Module):
         )
 
 
+# ---------- not used anymore ------------------------------------------------------
 class MovableNetwork(nn.Module):
     def __init__(
         self,
@@ -178,7 +229,7 @@ class MovableNetwork(nn.Module):
         h = x_emb
         for i, l in enumerate(self.linear):
             h = self.linear[i](h)
-            h = torch.tanh(h)
+            h = nn.ReLU(h)
 
         h = self.movable_warp(h)
         # is_movable = torch.tanh(

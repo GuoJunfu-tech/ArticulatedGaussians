@@ -118,7 +118,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             print("[Training]::step 1 is over, now training deformation net")
             print("[Training]::building knn trees")
             neighbor_sq_dist, neighbor_indices = knn(
-                gaussians.get_xyz.detach().cpu().numpy(), 50
+                gaussians.get_xyz.detach().cpu().numpy(), 20
             )
             weight = np.exp(-20 * neighbor_sq_dist)
             dist = np.sqrt(neighbor_sq_dist)
@@ -263,8 +263,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 render_pkg_re["visibility_filter"],
                 render_pkg_re["radii"],
             )
-            gt_image_end = viewpoint_cam_end.original_image.cuda()
-            loss_end = ll1_ssim_loss(image_end, gt_image_end, opt.lambda_dssim)
+            gt_image_end = 1 - viewpoint_cam_end.original_image.cuda()
+            loss_end = ll1_ssim_loss(1 - image_end, gt_image_end, opt.lambda_dssim)
 
         loss_arap = 0.0
         if opt.only_train_single_frame < iteration < opt.pretrain:
@@ -277,7 +277,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             source_xyz = new_xyz[gaussians.get_movable_mask == 1]
             loss_cd = chamfer_distance_loss(deformed_xyz, source_xyz)
 
-        loss = loss_end + loss_start + loss_arap + loss_cd
+        weighted_loss_arap = loss_arap * 2.0
+        loss = loss_end + loss_start + loss_cd + weighted_loss_arap
         loss.backward()
 
         iter_end.record()
@@ -303,7 +304,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             losses = {
                 "start": loss_start,
                 "end": loss_end,
-                "arap": loss_arap,
+                "arap": weighted_loss_arap,
                 "cd": loss_cd,
             }
             if opt.tb_writer and (iteration % opt.report_interval == 0):
