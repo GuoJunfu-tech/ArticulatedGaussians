@@ -86,7 +86,7 @@ def visualize(xyz, factor=None, grad=None):
             # ) * (1 - cluster)
             colors[cluster_id, :] = (
                 np.array([1.0, 0.0, 0.0])
-                if cluster > 1e-4
+                if cluster > 1e-3
                 else np.array([0.0, 0.0, 1.0])
             )
 
@@ -283,12 +283,12 @@ if __name__ == "__main__":
     draw_graph(xyz, ndx)
     # mask_x, _ = build_mask(ndx.reshape(-1, 1), "gmm", 20)
     mask_x = ndx > 1e-1
-    mask_r, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
-    mask_union = np.bitwise_and(mask_x, mask_r)
+    # mask_r, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
+    # mask_union = np.bitwise_and(mask_x, mask_r)
 
-    unmove_pts, move_pts = divide_mask(xyz, mask_union)
+    unmove_pts, move_pts = divide_mask(xyz, mask_x)
 
-    mdx = dx.detach().cpu().numpy()[mask_union == 1]
+    mdx = dx.detach().cpu().numpy()[mask_x == 1]
 
     pcd_u = draw_one_color(unmove_pts, dx=0)
     pcd_m = draw_one_color(move_pts, dx=1.5)

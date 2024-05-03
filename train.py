@@ -84,6 +84,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     # grad_counter = 0
 
     arti_params = revolute
+    object_name = dataset.model_path.split("/")[-1]
 
     for iteration in range(start, end + 1):
         iter_start.record()
@@ -93,7 +94,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         if iteration == end:
             # deform.save_weights(args.model_path, iteration)
             if end == opt.update_mask:
-                object = dataset.model_path.split("/")[-1]
+                object_name = dataset.model_path.split("/")[-1]
                 render_results(
                     viewpoint_loader.get_cameras("start"),
                     gaussians,
@@ -103,7 +104,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                     pipe,
                     background,
                     type="gif",
-                    note=f"final_{object}",
+                    note=f"final_{object_name}",
                 )
 
             print("Training finished.")
@@ -131,13 +132,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
             with torch.no_grad():
                 _, _, (d_xyz, d_rotations) = deformGS.step(gaussians)
+                # ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
+                # ndr = torch.norm(d_rotations, dim=-1).detach().cpu().numpy()
                 ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
-                ndr = torch.norm(d_rotations, dim=-1).detach().cpu().numpy()
+                ndx = (ndx - min(ndx)) / (max(ndx) - min(ndx))
+                mask_x = ndx > 3e-1
 
-                mask_u = mask_init(ndr, ndx, 3e-1)  # TODO set optional threshold
+                # mask_u = mask_init(ndr, ndx, 3e-1)  # TODO set optional threshold
                 xyz = gaussians.get_xyz.detach()
                 deformed_xyz = xyz + d_xyz.detach()
-                deformed_xyz = deformed_xyz[mask_u == 1].detach()
+                deformed_xyz = deformed_xyz[mask_x == 1].detach()
 
             data = {
                 "gaussians": gaussians,
@@ -154,7 +158,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 pickle.dump(data, f)
                 print(" stage 2 data saved")
 
-            gaussians.initialize_mask(mask_u)
+            gaussians.initialize_mask(mask_x)
             continue
 
         if iteration == opt.update_params:
@@ -165,13 +169,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             with torch.no_grad():
                 _, _, (d_xyz, d_rotations) = deformGS.step(gaussians)
                 ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
-                ndr = torch.norm(d_rotations, dim=-1).detach().cpu().numpy()
+                ndx = (ndx - min(ndx)) / (max(ndx) - min(ndx))
+                mask_x = ndx > 1e-1
+                # ndr = torch.norm(d_rotations, dim=-1).detach().cpu().numpy()
 
-                mask_u = mask_init(ndr, ndx, 1e-1)
-                gaussians.initialize_mask(mask_u)
+                # mask_u = mask_init(ndr, ndx, 1e-1)
+                gaussians.initialize_mask(mask_x)
 
-                # if arti_params.type == "revolute":
-                arti_params.theta_normalization()
+                if arti_params.type == "revolute":
+                    arti_params.theta_normalization()
 
             render_results(
                 viewpoint_loader.get_cameras("start"),
@@ -182,7 +188,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 pipe,
                 background,
                 type="gif",
-                note="opt_param",
+                note=f"param_{object_name}",
             )
             continue
 
@@ -277,7 +283,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             source_xyz = new_xyz[gaussians.get_movable_mask == 1]
             loss_cd = chamfer_distance_loss(deformed_xyz, source_xyz)
 
-        weighted_loss_arap = loss_arap * 2.0
+        weighted_loss_arap = loss_arap
         loss = loss_end + loss_start + loss_cd + weighted_loss_arap
         loss.backward()
 
