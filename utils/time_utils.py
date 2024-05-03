@@ -8,6 +8,88 @@ import numpy as np
 from math import ceil
 
 
+class TNet(nn.Module):
+    def __init__(self, k=3):
+        super(TNet, self).__init__()
+        self.k = k
+        self.conv1 = nn.Conv1d(k, 64, 1)
+        self.conv2 = nn.Conv1d(64, 128, 1)
+        self.conv3 = nn.Conv1d(128, 1024, 1)
+        self.fc1 = nn.Linear(1024, 512)
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, k * k)
+
+        self.bn1 = nn.BatchNorm1d(64)
+        self.bn2 = nn.BatchNorm1d(128)
+        self.bn3 = nn.BatchNorm1d(1024)
+        self.bn4 = nn.BatchNorm1d(512)
+        self.bn5 = nn.BatchNorm1d(256)
+
+        self.fc3.bias.data.fill_(0)
+        self.fc3.weight.data.uniform_(-0.001, 0.001)
+
+    def forward(self, x):
+        batch_size = x.size(0)
+
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.relu(self.bn3(self.conv3(x)))
+        x = torch.max(x, 2)[0]
+
+        x = F.relu(self.bn4(self.fc1(x)))
+        x = F.relu(self.bn5(self.fc2(x)))
+        x = self.fc3(x)
+
+        iden = torch.eye(self.k, device=x.device).repeat(batch_size, 1, 1)
+        x = x.view(-1, self.k, self.k) + iden
+
+        return x
+
+
+class PointNet(nn.Module):
+    def __init__(self):
+        super(PointNet, self).__init__()
+        # self.tnet1 = TNet(k=3)
+        self.W = 64
+        self.conv1 = nn.Conv1d(3, 64, 1)
+        self.conv2 = nn.Conv1d(64, 64, 1)
+        self.conv3 = nn.Conv1d(64, 128, 1)
+        self.fc1 = nn.Linear(128, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(64, self.W)
+        self.gaussian_warp = nn.Linear(self.W, 3)
+        self.gaussian_rotation = nn.Linear(self.W, 4)
+
+        self.bn1 = nn.BatchNorm1d(64)
+        self.bn2 = nn.BatchNorm1d(64)
+        self.bn3 = nn.BatchNorm1d(128)
+        self.bn4 = nn.BatchNorm1d(128)
+        self.bn5 = nn.BatchNorm1d(64)
+
+    def forward(self, gaussians):
+        x = gaussians.get_xyz.detach()
+        batch_size = x.size(0)
+
+        # x = x.transpose(1, 2)
+        h = x.unsqueeze(2)
+
+        h = F.relu(self.bn1(self.conv1(h)))
+        h = F.relu(self.bn2(self.conv2(h)))
+        h = F.relu(self.bn3(self.conv3(h)))
+
+        h = F.relu(self.bn4(self.fc1(h)))
+        h = F.relu(self.bn5(self.fc2(h)))
+        h = F.relu(self.fc3(h))
+        d_xyz = self.gaussian_warp(h)
+        d_rotation = self.gaussian_rotation(h)
+
+        return (
+            x + d_xyz,
+            gaussians.get_rotation + d_rotation,
+            (d_xyz, d_rotation),
+        )
+
+
 class PointEmbed(nn.Module):
     def __init__(self, data_dim=3, hidden_dim=48, dim=128):
         super().__init__()
@@ -51,58 +133,7 @@ class PointEmbed(nn.Module):
         return embed.squeeze()
 
 
-def get_embedder(multires, i=1):
-    if i == -1:
-        return nn.Identity(), 3
-
-    embed_kwargs = {
-        "include_input": True,
-        "input_dims": i,
-        "max_freq_log2": multires - 1,
-        "num_freqs": multires,
-        "log_sampling": True,
-        "periodic_fns": [torch.sin, torch.cos],
-    }
-
-    embedder_obj = Embedder(**embed_kwargs)
-    embed = lambda x, eo=embedder_obj: eo.embed(x)
-    return embed, embedder_obj.out_dim
-
-
-class Embedder:
-    def __init__(self, **kwargs):
-        self.kwargs = kwargs
-        self.create_embedding_fn()
-
-    def create_embedding_fn(self):
-        embed_fns = []
-        d = self.kwargs["input_dims"]
-        out_dim = 0
-        if self.kwargs["include_input"]:
-            embed_fns.append(lambda x: x)
-            out_dim += d
-
-        max_freq = self.kwargs["max_freq_log2"]
-        N_freqs = self.kwargs["num_freqs"]
-
-        if self.kwargs["log_sampling"]:
-            freq_bands = 2.0 ** torch.linspace(0.0, max_freq, steps=N_freqs)
-        else:
-            freq_bands = torch.linspace(2.0**0.0, 2.0**max_freq, steps=N_freqs)
-
-        for freq in freq_bands:
-            for p_fn in self.kwargs["periodic_fns"]:
-                embed_fns.append(lambda x, p_fn=p_fn, freq=freq: p_fn(x * freq))
-                out_dim += d
-
-        self.embed_fns = embed_fns
-        self.out_dim = out_dim
-
-    def embed(self, inputs):
-        return torch.cat([fn(inputs) for fn in self.embed_fns], -1)
-
-
-class DeformNetwork(nn.Module):
+class DeformNetwork(nn.Module):  # FIXME: input x to forward(), not gaussian!
     def __init__(
         self,
         D=8,
@@ -111,7 +142,6 @@ class DeformNetwork(nn.Module):
         output_ch=59,
         multires=10,
         is_blender=True,
-        is_6dof=False,
     ):
         super(DeformNetwork, self).__init__()
         self.D = D
@@ -156,13 +186,8 @@ class DeformNetwork(nn.Module):
             )
 
         self.is_blender = is_blender
-        self.is_6dof = is_6dof
 
-        if is_6dof:
-            self.branch_w = nn.Linear(W, 3)
-            self.branch_v = nn.Linear(W, 3)
-        else:
-            self.gaussian_warp = nn.Linear(W, 3)
+        self.gaussian_warp = nn.Linear(W, 3)
         self.gaussian_rotation = nn.Linear(W, 4)
         # self.gaussian_scaling = nn.Linear(W, 3)
 
@@ -176,15 +201,6 @@ class DeformNetwork(nn.Module):
             h = F.relu(h)
             if i in self.skips:
                 h = torch.cat([x_emb, h], -1)
-
-            if self.is_6dof:
-                w = self.branch_w(h)
-                v = self.branch_v(h)
-                theta = torch.norm(w, dim=-1, keepdim=True)
-                w = w / theta + 1e-5
-                v = v / theta + 1e-5
-                screw_axis = torch.cat([w, v], dim=-1)
-                d_xyz = exp_se3(screw_axis, theta)
 
         d_xyz = self.gaussian_warp(h)
         d_rotation = self.gaussian_rotation(h)

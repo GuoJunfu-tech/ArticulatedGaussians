@@ -11,7 +11,7 @@ import math
 
 class DeformModel:
     def __init__(self, training_args) -> None:
-        self.optimizer = None
+        # self.optimizer = None
         self.movable_network = MovableNetwork().cuda()
         self.optimizer = None
         self.spatial_lr_scale = 5
@@ -56,7 +56,8 @@ class DeformModel:
             assert factor.shape[0] == xyz.shape[0]
             movable_factor = factor
         else:
-            movable_factor = self.movable_network(xyz)
+            assert False
+            # movable_factor = self.movable_network(xyz)
 
         if not keep_gs_grad:
             xyz = xyz.detach()

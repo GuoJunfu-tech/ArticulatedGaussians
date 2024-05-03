@@ -147,7 +147,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 "gaussians": gaussians,
                 "dx": d_xyz,
                 "dr": d_rotations,
-                "deformModel": deform,
+                # "deformModel": deform,
                 "params": {
                     "axis": revolute.axis.tolist(),
                     "pivot": revolute.pivot.tolist(),
@@ -406,7 +406,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
             if iteration > opt.only_train_single_frame:
                 # either deformGS or deformArti
-                deform.optimizer.step()
+                deform.optimizer.step()  # FIXME DeformModel now is only arti_params
                 deform.optimizer.zero_grad()
                 deform.update_learning_rate(iteration)
 

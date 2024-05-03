@@ -1,4 +1,4 @@
-"""this file is almost the same as the work *Deformable 3D Gaussians for High-Fidelity Monocular Dynamic Scene Reconstruction* CVPR 2024
+"""this file is partly copied from the work *Deformable 3D Gaussians for High-Fidelity Monocular Dynamic Scene Reconstruction* CVPR 2024
 
 We use the results as the initial guess, while we only output the dx and dr of each gs, no ds.
 """
@@ -6,7 +6,7 @@ We use the results as the initial guess, while we only output the dx and dr of e
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils.time_utils import DeformNetwork
+from utils.time_utils import DeformNetwork, PointNet
 import os
 from utils.system_utils import searchForMaxIteration
 from utils.general_utils import get_expon_lr_func
@@ -14,7 +14,8 @@ from utils.general_utils import get_expon_lr_func
 
 class DeformGS:
     def __init__(self, is_blender=True, is_6dof=False):
-        self.deform = DeformNetwork(is_blender=is_blender, is_6dof=is_6dof).cuda()
+        # self.deform = DeformNetwork(is_blender=is_blender).cuda()
+        self.deform = PointNet().cuda()
         self.optimizer = None
         self.spatial_lr_scale = 5
 
