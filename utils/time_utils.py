@@ -8,77 +8,46 @@ import numpy as np
 from math import ceil
 
 
-class TNet(nn.Module):
-    def __init__(self, k=3):
-        super(TNet, self).__init__()
-        self.k = k
-        self.conv1 = nn.Conv1d(k, 64, 1)
-        self.conv2 = nn.Conv1d(64, 128, 1)
-        self.conv3 = nn.Conv1d(128, 1024, 1)
-        self.fc1 = nn.Linear(1024, 512)
-        self.fc2 = nn.Linear(512, 256)
-        self.fc3 = nn.Linear(256, k * k)
-
-        self.bn1 = nn.BatchNorm1d(64)
-        self.bn2 = nn.BatchNorm1d(128)
-        self.bn3 = nn.BatchNorm1d(1024)
-        self.bn4 = nn.BatchNorm1d(512)
-        self.bn5 = nn.BatchNorm1d(256)
-
-        self.fc3.bias.data.fill_(0)
-        self.fc3.weight.data.uniform_(-0.001, 0.001)
-
-    def forward(self, x):
-        batch_size = x.size(0)
-
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = F.relu(self.bn2(self.conv2(x)))
-        x = F.relu(self.bn3(self.conv3(x)))
-        x = torch.max(x, 2)[0]
-
-        x = F.relu(self.bn4(self.fc1(x)))
-        x = F.relu(self.bn5(self.fc2(x)))
-        x = self.fc3(x)
-
-        iden = torch.eye(self.k, device=x.device).repeat(batch_size, 1, 1)
-        x = x.view(-1, self.k, self.k) + iden
-
-        return x
-
-
 class PointNet(nn.Module):
-    def __init__(self):
+    def __init__(self, point_num):
         super(PointNet, self).__init__()
-        # self.tnet1 = TNet(k=3)
         self.W = 64
+        self.point_num = point_num
         self.conv1 = nn.Conv1d(3, 64, 1)
-        self.conv2 = nn.Conv1d(64, 64, 1)
-        self.conv3 = nn.Conv1d(64, 128, 1)
-        self.fc1 = nn.Linear(128, 128)
+        self.conv2 = nn.Conv1d(64, 128, 1)
+        self.conv3 = nn.Conv1d(128, 256, 1)
+        self.conv4 = nn.Conv1d(256, 512, 1)
+        self.fc1 = nn.Linear(512, 128)
         self.fc2 = nn.Linear(128, 64)
         self.fc3 = nn.Linear(64, self.W)
         self.gaussian_warp = nn.Linear(self.W, 3)
         self.gaussian_rotation = nn.Linear(self.W, 4)
 
         self.bn1 = nn.BatchNorm1d(64)
-        self.bn2 = nn.BatchNorm1d(64)
-        self.bn3 = nn.BatchNorm1d(128)
-        self.bn4 = nn.BatchNorm1d(128)
-        self.bn5 = nn.BatchNorm1d(64)
+        self.bn2 = nn.BatchNorm1d(128)
+        self.bn3 = nn.BatchNorm1d(256)
+        self.bn4 = nn.BatchNorm1d(512)
 
     def forward(self, gaussians):
-        x = gaussians.get_xyz.detach()
-        batch_size = x.size(0)
+        x = gaussians.get_xyz.detach()  # Nx3
+        # h = x.view(1, -1, 3)
+        h = x.unsqueeze(0)
+        B, N, C = h.shape
+        h = torch.permute(h, dims=(0, 2, 1))
 
-        # x = x.transpose(1, 2)
-        h = x.unsqueeze(2)
-
+        # h = h.view(B, C, N)
         h = F.relu(self.bn1(self.conv1(h)))
         h = F.relu(self.bn2(self.conv2(h)))
         h = F.relu(self.bn3(self.conv3(h)))
+        h = F.relu(self.bn4(self.conv4(h)))
+        # h = h.transpose(1, 2).contiguous()
 
-        h = F.relu(self.bn4(self.fc1(h)))
-        h = F.relu(self.bn5(self.fc2(h)))
+        h = F.max_pool1d(h, kernel_size=1).squeeze(2)
+        h = torch.permute(h, dims=(0, 2, 1))
+        h = h.squeeze(0)
+
+        h = F.relu(self.fc1(h))
+        h = F.relu(self.fc2(h))
         h = F.relu(self.fc3(h))
         d_xyz = self.gaussian_warp(h)
         d_rotation = self.gaussian_rotation(h)
@@ -137,7 +106,7 @@ class DeformNetwork(nn.Module):  # FIXME: input x to forward(), not gaussian!
     def __init__(
         self,
         D=8,
-        W=128,
+        W=256,
         input_ch=3,
         output_ch=59,
         multires=10,
@@ -231,13 +200,14 @@ class MovableNetwork(nn.Module):
         self.t_multires = 6
         # self.skips = [D // 2]
 
-        self.embed_fn, xyz_input_ch = get_embedder(multires, 3)
+        # self.embed_fn, xyz_input_ch = get_embedder(multires, 3)
+        xyz_input_ch = None
         self.input_ch = xyz_input_ch
         self.movable_warp = nn.Linear(W, 1)
 
-        self.linear = nn.ModuleList(
-            [nn.Linear(xyz_input_ch, W)] + [(nn.Linear(W, W)) for i in range(D - 1)]
-        )
+        # self.linear = nn.ModuleList(
+        #     [nn.Linear(xyz_input_ch, W)] + [(nn.Linear(W, W)) for i in range(D - 1)]
+        # )
 
     def forward(self, x):
         x_emb = self.embed_fn(x)

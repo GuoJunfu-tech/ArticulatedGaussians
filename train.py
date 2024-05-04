@@ -46,8 +46,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     else:
         tb_writer = False
     gaussians = GaussianModel(dataset.sh_degree)
-    deformGS = DeformGS()
-    deformGS.train_setting(opt)
 
     deformArti = DeformModel(opt)
     revolute = Revolute()
@@ -125,6 +123,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             dist = np.sqrt(neighbor_sq_dist)
             neighbor_weight = torch.tensor(weight).float().to(gaussians.get_xyz.device)
             neighbor_dist = torch.tensor(dist).float().to(gaussians.get_xyz.device)
+
+            deformGS = DeformGS(gaussians.get_xyz.shape[0])
+            deformGS.train_setting(opt)
             continue
 
         if opt.pretrain == iteration:
