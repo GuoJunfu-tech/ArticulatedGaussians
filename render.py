@@ -31,7 +31,7 @@ def render_set(
     deformModel = DeformModel()
 
     gaussians = GaussianModel(dataset.sh_degree)
-    gaussians.load_ply(ply_path)
+    # gaussians.load_ply(ply_path)
 
     with torch.no_grad():
         # deform = DeformModel(dataset.is_blender, dataset.is_6dof)
@@ -43,7 +43,7 @@ def render_set(
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
         for status in ["start", "end"]:
-            scene = Scene(dataset, gaussians, status=status)
+            scene = Scene(dataset, gaussians, status=status, ply_path=ply_path)
             views = scene.getTestCameras()
 
             for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
