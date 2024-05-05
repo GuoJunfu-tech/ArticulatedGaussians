@@ -1,7 +1,3 @@
-"""
-this code is modified from 3D-GS. Most has been changed
-"""
-
 import torch
 from scene import Scene, DeformModel
 import os

@@ -249,11 +249,12 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
 
 
 def readCamerasFromArticulatedTransforms(
-    path, transformsfile, white_background, status="start", extension=".png"
+    path, white_background, status="start", data_type="train", extension=".png"
 ):
     cam_infos = []
+    transforms_file = f"camera_{data_type}.json"
 
-    with open(os.path.join(path, transformsfile)) as json_file:
+    with open(os.path.join(path, status, transforms_file)) as json_file:
         contents = json.load(json_file)
         if status == "start":
             frame_time = 0
@@ -268,13 +269,14 @@ def readCamerasFromArticulatedTransforms(
                 K = raw_matrix
                 continue
 
-            cam_name = os.path.join(path, "train", key + extension)
+            # cam_name = os.path.join(path, status, key + extension)
+            cam_name = key + extension
             matrix = np.linalg.inv(np.array(raw_matrix))
             R = -np.transpose(matrix[:3, :3])
             R[:, 0] = -R[:, 0]
             T = -matrix[:3, 3]
 
-            image_path = os.path.join(path, cam_name)
+            image_path = os.path.join(path, status, data_type, cam_name)
             image_name = Path(cam_name).stem
             image = Image.open(image_path)
             im_data = np.array(image.convert("RGBA"))
@@ -377,16 +379,13 @@ def readArticulatedSyntheticInfo(
     """
     print("Reading Training Transforms")
     train_cam_infos = readCamerasFromArticulatedTransforms(
-        path, "camera_train.json", white_background, status, extension
+        path, white_background, status, "train", extension
     )
 
     print("Reading Test Transforms")
-    try:
-        test_cam_infos = readCamerasFromArticulatedTransforms(
-            path, "camera_test.json", white_background, status, extension
-        )
-    except:
-        test_cam_infos = []
+    test_cam_infos = readCamerasFromArticulatedTransforms(
+        path, white_background, status, "test", extension
+    )
 
     if not eval:
         train_cam_infos.extend(test_cam_infos)

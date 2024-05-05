@@ -48,6 +48,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     gaussians = GaussianModel(dataset.sh_degree)
 
     deformArti = DeformModel(opt)
+
+    deformGS = DeformGS()
+    deformGS.train_setting(opt)
     revolute = Revolute()
     prismatic = Prismatic()
 
@@ -124,8 +127,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             neighbor_weight = torch.tensor(weight).float().to(gaussians.get_xyz.device)
             neighbor_dist = torch.tensor(dist).float().to(gaussians.get_xyz.device)
 
-            deformGS = DeformGS(gaussians.get_xyz.shape[0])
-            deformGS.train_setting(opt)
             continue
 
         if opt.pretrain == iteration:
@@ -133,8 +134,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
             with torch.no_grad():
                 _, _, (d_xyz, d_rotations) = deformGS.step(gaussians)
-                # ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
-                # ndr = torch.norm(d_rotations, dim=-1).detach().cpu().numpy()
                 ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
                 ndx = (ndx - min(ndx)) / (max(ndx) - min(ndx))
                 mask_x = ndx > 3e-1
@@ -172,9 +171,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
                 ndx = (ndx - min(ndx)) / (max(ndx) - min(ndx))
                 mask_x = ndx > 1e-1
-                # ndr = torch.norm(d_rotations, dim=-1).detach().cpu().numpy()
-
-                # mask_u = mask_init(ndr, ndx, 1e-1)
                 gaussians.initialize_mask(mask_x)
 
                 if arti_params.type == "revolute":
@@ -607,6 +603,7 @@ if __name__ == "__main__":
         nargs="+",
         type=int,
         default=[
+            6000,
             10000,
             15000,
             19000,

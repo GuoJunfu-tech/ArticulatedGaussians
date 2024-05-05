@@ -13,9 +13,9 @@ from utils.general_utils import get_expon_lr_func
 
 
 class DeformGS:
-    def __init__(self, point_num, is_blender=True, is_6dof=False):
+    def __init__(self, is_blender=True, is_6dof=False):
         # self.deform = DeformNetwork(is_blender=is_blender).cuda()
-        self.deform = PointNet(point_num).cuda()
+        self.deform = PointNet().cuda()
         self.optimizer = None
         self.spatial_lr_scale = 5
 
