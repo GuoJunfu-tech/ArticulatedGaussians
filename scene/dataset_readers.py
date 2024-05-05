@@ -379,11 +379,11 @@ def readArticulatedSyntheticInfo(
     train_cam_infos = readCamerasFromArticulatedTransforms(
         path, "camera_train.json", white_background, status, extension
     )
-    print("Reading Test Transforms")
 
+    print("Reading Test Transforms")
     try:
         test_cam_infos = readCamerasFromArticulatedTransforms(
-            path, "camera_test.json", white_background, extension
+            path, "camera_test.json", white_background, status, extension
         )
     except:
         test_cam_infos = []

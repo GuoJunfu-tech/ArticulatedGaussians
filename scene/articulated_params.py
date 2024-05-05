@@ -48,6 +48,14 @@ class Prismatic:
         with open(path, "w") as f:
             json.dump(data, f)
 
+    def load_params(self, data):
+        if self._type != data["type"]:
+            raise ValueError("[ERROR]::Wrong type of the articulated parameters!")
+
+        self._axis = self.list_to_torch(data["axis"])
+        self._theta = self.list_to_torch(data["theta"])
+        self._pivot = self.list_to_torch(data["pivot"])
+
 
 class Revolute:
     def __init__(self) -> None:
@@ -136,7 +144,7 @@ class Revolute:
         data = {
             "type": self._type,
             "axis": self._axis.detach().cpu().tolist(),
-            "pivot": [0, 0, 0],
+            "pivot": self._pivot.detach().cpu().tolist(),
             "theta": self._theta.detach().cpu().item(),
         }
         with open(path, "w") as f:
@@ -149,3 +157,11 @@ class Revolute:
         elif normalized_angle < -math.pi:
             normalized_angle += 2 * math.pi  # 如果小于 -pi，加上 2*pi
         self._theta = normalized_angle
+
+    def load_params(self, data):
+        if self._type != data["type"]:
+            raise ValueError("[ERROR]::Wrong type of the articulated parameters!")
+
+        self._axis = self.list_to_torch(data["axis"])
+        self._theta = self.list_to_torch(data["theta"])
+        self._pivot = self.list_to_torch(data["pivot"])

@@ -10,13 +10,13 @@ import math
 
 
 class DeformModel:
-    def __init__(self, training_args) -> None:
+    def __init__(self) -> None:
         # self.optimizer = None
         self.movable_network = MovableNetwork().cuda()
         self.optimizer = None
         self.spatial_lr_scale = 5
         self.deform_operator = ArticulatedOperator()
-        self.train_setting(training_args)
+        # self.train_setting(training_args)
 
     def train_setting(self, training_args):
         l = [

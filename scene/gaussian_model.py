@@ -302,6 +302,13 @@ class GaussianModel:
         for idx, attr_name in enumerate(rot_names):
             rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
+        mask_names = [
+            p.name for p in plydata.elements[0].properties if p.name.startswith("mask")
+        ]
+        mask = np.zeros((xyz.shape[0], len(mask_names)))
+        for idx, attr_name in enumerate(mask_names):
+            mask[:, idx] = np.asarray(plydata.elements[0][attr_name])
+
         self._xyz = nn.Parameter(
             torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True)
         )
@@ -328,6 +335,9 @@ class GaussianModel:
         self._rotation = nn.Parameter(
             torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True)
         )
+        self._movable_mask = nn.Parameter(
+            torch.tensor(mask, dtype=torch.float, device="cuda").requires_grad_(True)
+        ).squeeze()
 
         self.active_sh_degree = self.max_sh_degree
 
