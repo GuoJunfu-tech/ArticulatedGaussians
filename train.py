@@ -32,6 +32,8 @@ from utils.visualization_utils import render_results
 from utils.knn_utils import knn
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
+import copy
+
 try:
     from torch.utils.tensorboard import SummaryWriter
 
@@ -47,10 +49,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         tb_writer = False
     gaussians = GaussianModel(dataset.sh_degree)
 
-    deformArti = DeformModel(opt)
+    deformArti = DeformModel()
 
-    deformGS = DeformGS()
-    deformGS.train_setting(opt)
+    deformGS = DeformGS(opt)
+    # deformGS.train_setting(opt)
     revolute = Revolute()
     prismatic = Prismatic()
 
@@ -205,6 +207,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             viewpoint_cam_end = viewpoint_loader.get_viewpoint_cam(
                 status="end", load2device=dataset.load2gpu_on_the_fly
             )
+
         elif opt.update_params < iteration < opt.update_mask:
             viewpoint_cam_start, viewpoint_cam_end = (
                 viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
@@ -216,8 +219,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
         # before pretrain, we do not train the articulated params
         if iteration > opt.only_train_single_frame:
+            gs_no_grad = True if iteration < opt.update_params else False
+            # gs_no_grad = True
             deform = deformGS if iteration < opt.pretrain else deformArti
-            new_xyz, new_rotations, _ = deform.step(gaussians, arti_params)
+            new_xyz, new_rotations, _ = deform.step(
+                gaussians, arti_params, gs_no_grad=gs_no_grad
+            )
 
         # ---------------------- render --------------------------
         loss_start = 0.0
@@ -249,7 +256,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 viewpoint_cam_start.load2device("cpu")
 
         loss_end = 0.0
-        if opt.only_train_single_frame < iteration < opt.update_mask:
+        if opt.only_train_single_frame < iteration:
             # or ( opt.update_mask_interval / 2 <= iter_counter < opt.update_mask_interval
             # ):
             render_pkg_re = render(
@@ -266,8 +273,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 render_pkg_re["visibility_filter"],
                 render_pkg_re["radii"],
             )
-            gt_image_end = 1 - viewpoint_cam_end.original_image.cuda()
-            loss_end = ll1_ssim_loss(1 - image_end, gt_image_end, opt.lambda_dssim)
+            gt_image_end = viewpoint_cam_end.original_image.cuda()
+            loss_end = ll1_ssim_loss(image_end, gt_image_end, opt.lambda_dssim)
 
         loss_arap = 0.0
         if opt.only_train_single_frame < iteration < opt.pretrain:
@@ -281,7 +288,26 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
             loss_cd = chamfer_distance_loss(deformed_xyz, source_xyz)
 
         weighted_loss_arap = loss_arap
-        loss = loss_end + loss_start + loss_cd + weighted_loss_arap
+        if iteration < opt.update_params:
+            # w = 1 / (loss_start.item() + 1e-6) * 1e-3
+            loss = loss_end + loss_start + loss_cd + weighted_loss_arap
+        else:
+            # loss = loss_end + loss_start
+            # when joint optimization, update the state with higher loss
+            # enlarge_weight = 2.
+            # loss = 2 * loss_end + loss_start
+            # total_loss = loss_end.detach().clone + loss_start.detach().clone()
+            weight_start = loss_start.item() / (loss_end.item() + 1e-8)
+            weight_end = loss_end.item() / (loss_start.item() + 1e-8)
+            weight_sum = weight_end + weight_start
+            loss = (
+                weight_start / weight_sum * loss_start
+                + weight_end / weight_sum * loss_end
+            )
+            # loss = (1.0 / loss_end.item()) * loss_start + (
+            #     1.0 / loss_start.item()
+            # ) * loss_end
+
         loss.backward()
 
         iter_end.record()
@@ -353,64 +379,67 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
 
             # --------------------- Densification --------------------------
             # Keep track of max radii in image-space for pruning
-            is_densify = False
-            if iteration > opt.update_params:
-                gaussians.max_radii2D[visibility_filter_end] = torch.max(
-                    gaussians.max_radii2D[visibility_filter_end],
-                    radii_end[visibility_filter_end],
-                )
-                gaussians.add_densification_stats(
-                    viewspace_point_tensor_end, visibility_filter_end
-                )
-                is_densify = True
-
-                # FIXME sick code! should update together!!
-
-            if (iteration < opt.only_train_single_frame) or (
-                iteration > opt.update_params
-            ):
-                gaussians.max_radii2D[visibility_filter_start] = torch.max(
-                    gaussians.max_radii2D[visibility_filter_start],
-                    radii_start[visibility_filter_start],
-                )
-
-                gaussians.add_densification_stats(
-                    viewspace_point_tensor_start, visibility_filter_start
-                )
-                is_densify = True
-
-            if (
-                iteration > opt.densify_from_iter
-                and iteration % opt.densification_interval == 0
-                and is_densify
-            ):
+            if iteration < opt.stop_densify:
                 is_densify = False
-                size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                if iteration > opt.update_params:
+                    gaussians.max_radii2D[visibility_filter_end] = torch.max(
+                        gaussians.max_radii2D[visibility_filter_end],
+                        radii_end[visibility_filter_end],
+                    )
+                    gaussians.add_densification_stats(
+                        viewspace_point_tensor_end, visibility_filter_end
+                    )
+                    is_densify = True
 
-                gaussians.densify_and_prune(
-                    opt.densify_grad_threshold,
-                    0.005,
-                    scene_end.cameras_extent,
-                    size_threshold,
-                )
+                    # FIXME sick code! should update together!!
 
-                if iteration % opt.opacity_reset_interval == 0 or (
-                    dataset.white_background and iteration == opt.densify_from_iter
+                if (iteration < opt.only_train_single_frame) or (
+                    iteration > opt.update_params
                 ):
-                    gaussians.reset_opacity()
+                    gaussians.max_radii2D[visibility_filter_start] = torch.max(
+                        gaussians.max_radii2D[visibility_filter_start],
+                        radii_start[visibility_filter_start],
+                    )
+
+                    gaussians.add_densification_stats(
+                        viewspace_point_tensor_start, visibility_filter_start
+                    )
+                    is_densify = True
+
+                if (
+                    iteration > opt.densify_from_iter
+                    and iteration % opt.densification_interval == 0
+                    and is_densify
+                ):
+                    is_densify = False
+                    size_threshold = (
+                        20 if iteration > opt.opacity_reset_interval else None
+                    )
+
+                    gaussians.densify_and_prune(
+                        opt.densify_grad_threshold,
+                        0.005,
+                        scene_end.cameras_extent,
+                        size_threshold,
+                    )
+
+                    if iteration % opt.opacity_reset_interval == 0 or (
+                        dataset.white_background and iteration == opt.densify_from_iter
+                    ):
+                        gaussians.reset_opacity()
 
             # --------------- optimization -------------------------
 
-            if iteration > opt.only_train_single_frame:
+            if opt.only_train_single_frame < iteration < opt.pretrain:
                 # either deformGS or deformArti
-                deform.optimizer.step()  # FIXME DeformModel now is only arti_params
+                deform.optimizer.step()  # FIXME Deform.optimizer is now only deformGS
                 deform.optimizer.zero_grad()
                 deform.update_learning_rate(iteration)
 
-                if opt.pretrain < iteration:
-                    arti_params.optimizer.step()
-                    arti_params.optimizer.zero_grad()
-                    arti_params.scheduler.step()
+            if opt.pretrain < iteration:
+                arti_params.optimizer.step()
+                arti_params.optimizer.zero_grad()
+                arti_params.scheduler.step()
 
             if (iteration < opt.only_train_single_frame) or (
                 iteration > opt.update_params
@@ -542,10 +571,10 @@ def eval(
                     or len(validation_configs[0]["cameras"]) == 0
                 ):
                     test_psnr = psnr_test
+
+                type = config["name"]
                 print(
-                    "\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(
-                        iteration, config["name"], l1_test, psnr_test
-                    )
+                    f"[ITER {iteration}] Evaluating {type} -{status}: L1 {l1_test} PSNR {psnr_test}"
                 )
             # if tb_writer:
             #     tb_writer.add_scalar(
@@ -603,14 +632,17 @@ if __name__ == "__main__":
         nargs="+",
         type=int,
         default=[
-            6000,
             10000,
             15000,
             19000,
             22000,
             24000,
             30000,
+            35000,
             38000,
+            42000,
+            46000,
+            49000,
         ],
         # default = [20000,]
     )
@@ -618,7 +650,7 @@ if __name__ == "__main__":
         "--save_iterations",
         nargs="+",
         type=int,
-        default=[22_000, 25000, 30_000, 35000],
+        default=[60000],
     )
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(sys.argv[1:])

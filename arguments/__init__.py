@@ -82,7 +82,7 @@ class PipelineParams(ParamGroup):
 
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):
-        self.iterations = 35_000
+        self.iterations = 55_000
         self.warm_up = 3_000
         self.position_lr_init = 0.00016
         self.position_lr_final = 0.0000016
@@ -110,7 +110,8 @@ class OptimizationParams(ParamGroup):
         self.only_train_single_frame = 5_000
         self.pretrain = 20_000
         self.update_params = 25000
-        self.update_mask = 40_000
+        self.update_mask = 50_000
+        self.stop_densify = 50000
 
         self.inverse_deform_interval = 500
 

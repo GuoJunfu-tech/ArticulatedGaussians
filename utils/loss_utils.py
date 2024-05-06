@@ -11,6 +11,7 @@
 
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
 from torch.autograd import Variable
 from math import exp
 # from scipy.spatial import KDTree
@@ -19,7 +20,8 @@ from utils.knn_utils import knn
 
 
 def l1_loss(network_output, gt):
-    return torch.abs((network_output - gt)).mean()
+    return F.l1_loss(network_output, gt)
+    # return torch.abs((network_output - gt)).mean()
 
 
 def kl_divergence(rho, rho_hat):
@@ -128,6 +130,7 @@ def opacity_loss(radii, gaussians, factor=0.1):
 
 def ll1_ssim_loss(image, gt_image, factor):
     Ll1 = l1_loss(image, gt_image)
+    # ssim_loss = ssim(image, gt_image)
     loss = (1.0 - factor) * Ll1 + factor * (1.0 - ssim(image, gt_image))
     return loss
 

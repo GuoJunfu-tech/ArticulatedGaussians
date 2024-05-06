@@ -13,13 +13,14 @@ from utils.general_utils import get_expon_lr_func
 
 
 class DeformGS:
-    def __init__(self, is_blender=True, is_6dof=False):
+    def __init__(self, training_args, is_blender=True, is_6dof=False):
         # self.deform = DeformNetwork(is_blender=is_blender).cuda()
         self.deform = PointNet().cuda()
         self.optimizer = None
         self.spatial_lr_scale = 5
+        self.train_setting(training_args)
 
-    def step(self, gaussians, revolute=None, keep_gs_grad=False):
+    def step(self, gaussians, revolute=None, gs_no_grad=False):
         return self.deform(gaussians)
 
     def train_setting(self, training_args):

@@ -35,13 +35,13 @@ class DeformModel:
     #         max_steps=training_args.deform_lr_max_steps,
     #     )
 
-    def step(self, gaussians, arti_param, keep_gs_grad=True):
+    def step(self, gaussians, arti_param, gs_no_grad=True):
         return self.deform(
             gaussians.get_xyz,
             gaussians.get_rotation,
             arti_param,
             gaussians.get_movable_mask,
-            keep_gs_grad=keep_gs_grad,
+            gs_no_grad=gs_no_grad,
         )
 
     def deform(
@@ -50,7 +50,7 @@ class DeformModel:
         rotation,
         arti_param,
         factor=None,
-        keep_gs_grad=False,
+        gs_no_grad=False,
     ):
         if factor is not None:
             assert factor.shape[0] == xyz.shape[0]
@@ -59,7 +59,7 @@ class DeformModel:
             assert False
             # movable_factor = self.movable_network(xyz)
 
-        if not keep_gs_grad:
+        if gs_no_grad:
             xyz = xyz.detach()
             quaternions = rotation.detach()
         else:

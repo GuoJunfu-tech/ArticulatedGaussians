@@ -39,7 +39,7 @@ def render_results(
                     if arti_params.type == "revolute":
                         arti_params.theta = i * theta / k
                     new_xyz, new_rotations, _ = deformModel.step(
-                        gaussians, arti_params, keep_gs_grad=False
+                        gaussians, arti_params, gs_no_grad=True
                     )
                     render_pkg_re = render(
                         cam,

@@ -52,7 +52,7 @@ def render_set(
                 # time_input = fid.unsqueeze(0).expand(xyz.shape[0], -1)
                 if status == "end":
                     new_xyz, new_rotations, _ = deformModel.step(
-                        gaussians, arti_params, keep_gs_grad=False
+                        gaussians, arti_params, gs_no_grad=False
                     )
                 else:
                     new_xyz = gaussians.get_xyz
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     with open(motion_path, "r") as f:
         motion = json.load(f)
 
-    ply_path = os.path.join(output_root, "point_cloud/iteration_40000/point_cloud.ply")
+    ply_path = os.path.join(output_root, "point_cloud/iteration_50000/point_cloud.ply")
     if not os.path.exists(ply_path):
         print("No ply file found at " + ply_path)
         exit()
