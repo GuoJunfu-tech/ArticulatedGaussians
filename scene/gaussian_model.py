@@ -21,6 +21,8 @@ from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 
+from torch.optim.lr_scheduler import LambdaLR
+
 
 class GaussianModel:
     def __init__(self, sh_degree: int):
@@ -182,6 +184,25 @@ class GaussianModel:
             lr_final=training_args.position_lr_final * self.spatial_lr_scale,
             lr_delay_mult=training_args.position_lr_delay_mult,
             max_steps=training_args.position_lr_max_steps,
+        )
+
+        def linear_warmup_lr(current, total, warmup):
+            if current < 0:
+                return 1
+            elif current < warmup:
+                return current / warmup
+            else:
+                return 1
+            # return current / warmup if current < warmup else 1
+
+        warmup_steps = 1000
+        total_steps = 50000
+
+        self.scheduler = LambdaLR(
+            self.optimizer,
+            lr_lambda=lambda current: linear_warmup_lr(
+                current - 25000, total_steps, warmup_steps
+            ),
         )
 
     def update_learning_rate(self, iteration):

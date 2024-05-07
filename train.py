@@ -447,6 +447,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 gaussians.optimizer.step()
                 gaussians.update_learning_rate(iteration)
                 gaussians.optimizer.zero_grad(set_to_none=True)
+                gaussians.scheduler.step()
+
+            # deform.optimizer.zero_grad()
+            gaussians.optimizer.zero_grad(set_to_none=True)
+            arti_params.optimizer.zero_grad()
 
 
 def prepare_output_and_logger(args):

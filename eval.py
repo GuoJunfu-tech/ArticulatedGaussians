@@ -111,6 +111,14 @@ def vis_quality_evaluate(scene_path):
             print("Unable to compute metrics for model", scene_path)
 
 
+def geo_quality_evaluate(output_root):
+    pass
+
+
+def motion_evaluate(output_root):
+    pass
+
+
 if __name__ == "__main__":
     device = torch.device("cuda:0")
     torch.cuda.set_device(device)
@@ -121,14 +129,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_path", "-m", required=True, nargs="+", type=str, default=[]
     )
-    # parser.add_argument(
-    #     "--output_path", "-o", required=True, nargs="+", type=str, default=[]
-    # )
+    parser.add_argument(
+        "--source_path", "-s", required=True, nargs="+", type=str, default=[]
+    )
     args = parser.parse_args()
     output_root = args.model_path[0]
     # scene = os.path.join(output_root, "point_cloud/iteration_40000/point_cloud.ply")
     if not os.path.exists(output_root):
         print(f"Scene address {output_root} not found!")
         exit()
+
+    motion_path = os.path.join(output_root, "motion.json")
+    motion_gt_path = os.path.join(output_root, "mobility_v2.json")
 
     vis_quality_evaluate(output_root)

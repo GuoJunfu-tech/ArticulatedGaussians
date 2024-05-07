@@ -1,0 +1,1 @@
+{"input": {"joint_id": 1, "motion": {"type": "rotate", "rotate": [20.0, -20.0], "translate": [0.0, 0.0]}}, "trans_info": {"axis": {"o": [0.0, 0.24714714808389615, -0.007706040424053753], "d": [1.0, 0.0, 0.0]}, "rotate": {"l": 20.0, "r": -20.0}, "type": "rotate"}}

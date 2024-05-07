@@ -19,7 +19,6 @@ def render_results(
 ):
     if arti_params.type == "prismatic":
         dist = arti_params.dist.detach().cpu().float()
-
     elif arti_params.type == "revolute":
         theta = arti_params.theta.detach().cpu().float()
 
@@ -69,6 +68,10 @@ def render_results(
                     duration=100,
                     loop=0,
                 )
+                if arti_params.type == "prismatic":
+                    arti_params.dist = dist
+                elif arti_params.type == "revolute":
+                    arti_params.theta = theta
             elif type == "img":
                 raise ValueError("Not implemented")  # TODO implement this
                 # revoluteParams.set_theta(theta)
