@@ -23,6 +23,7 @@ from utils.image_utils import psnr
 from argparse import ArgumentParser
 from plyfile import PlyData, PlyElement
 import numpy as np
+import chamfer3D.dist_chamfer_3D, fscore
 
 import torch
 import torchvision.transforms.functional as tf
