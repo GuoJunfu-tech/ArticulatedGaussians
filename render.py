@@ -5,16 +5,19 @@ from tqdm import tqdm
 from os import makedirs
 from gaussian_renderer import render
 import torchvision
-from utils.general_utils import safe_state
-from utils.pose_utils import pose_spherical, render_wander_path
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args
-from scene import Scene, GaussianModel, DeformModel, Revolute, Prismatic, DeformGS
 import imageio
 import json
 import numpy as np
 from PIL import Image
 import sys
+import open3d as o3d
+import pickle
+
+from utils.general_utils import safe_state
+from utils.pose_utils import pose_spherical, render_wander_path
+from scene import Scene, GaussianModel, DeformModel, Revolute, Prismatic, DeformGS
 
 
 def render_set(
@@ -27,11 +30,11 @@ def render_set(
     depth_path = paths["depth"]
     gt_path = paths["gt"]
     render_path = paths["render"]
+    root = paths["root"]
 
     deformModel = DeformModel()
 
     gaussians = GaussianModel(dataset.sh_degree)
-    # gaussians.load_ply(ply_path)
 
     with torch.no_grad():
         # deform = DeformModel(dataset.is_blender, dataset.is_6dof)
@@ -84,6 +87,24 @@ def render_set(
                         os.path.join(output_path, "{0:05d}".format(idx) + ".png"),
                     )
 
+    # gs_save_path = os.path.join(root, "gaussians.pkl")
+    # pts = {
+    #     "xyz": gaussians.get_xyz.detach().cpu(),
+    #     "rotation": gaussians.get_rotation.detach().cpu(),
+    #     "scale": gaussians.get_scaling.detach().cpu(),
+    #     "mask": gaussians.get_movable_mask.detach().cpu(),
+    # }
+    # with open(gs_save_path, "wb") as f:
+    #     pickle.dump(pts, f)
+
+
+def save_pts(gaussians):
+    xyz = gaussians.get_xyz
+    mask = gaussians.get_movable_mask
+
+    m_xyz = xyz[mask == 1]
+    u_xyz = xyz[mask == 0]
+
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -119,6 +140,7 @@ if __name__ == "__main__":
         os.makedirs(gt_path)
 
     img_paths = {
+        "root": output_root,
         "render": rendered_path,
         "depth": depth_path,
         "gt": gt_path,
