@@ -55,17 +55,17 @@ def compute_chamfer(recon_pts, gt_pts):
 def geo_quality_evaluate(pred_info, gt_path):
     xyz = pred_info["xyz"]
     mask = pred_info["mask"].squeeze()
-    xyz_m = xyz[mask == 1]
-    xyz_u = xyz[mask == 0]
-    assert xyz_m.shape[0] + xyz_u.shape[0] == xyz.shape[0]
+    xyz_d = xyz[mask == 1]
+    xyz_s = xyz[mask == 0]
+    assert xyz_d.shape[0] + xyz_s.shape[0] == xyz.shape[0]
 
     gt_w_ply_path = os.path.join(gt_path, "start", "start_rotate.ply")
     gt_s_ply_path = os.path.join(gt_path, "start", "start_static_rotate.ply")
     gt_d_ply_path = os.path.join(gt_path, "start", "start_dynamic_rotate.ply")
 
     cd_w = compute_recon_error(xyz, gt_w_ply_path)
-    cd_d = compute_recon_error(xyz, gt_d_ply_path)
-    cd_s = compute_recon_error(xyz, gt_s_ply_path)
+    cd_d = compute_recon_error(xyz_d, gt_d_ply_path)
+    cd_s = compute_recon_error(xyz_s, gt_s_ply_path)
     return {"cd_w": cd_w.item(), "cd_d": cd_d.item(), "cd_s": cd_s.item()}
 
 
@@ -73,7 +73,6 @@ def compute_recon_error(recon_pts, gt_path, n_samples=10000, vis=False):
     gt_mesh = o3d.io.read_triangle_mesh(gt_path)
     gt_pts = gt_mesh.sample_points_uniformly(n_samples)
     gt_pts_np = np.asarray(gt_pts.points)
-
     if vis:
         pts = gt_pts.clone().detach().squeeze().numpy()
         gt_pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(pts))
@@ -82,7 +81,7 @@ def compute_recon_error(recon_pts, gt_path, n_samples=10000, vis=False):
         # recon_pcd = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(pts))
         # o3d.io.write_point_cloud("recon_points.ply", recon_pcd)
 
-    return compute_chamfer(
+    return 1000 * compute_chamfer(
         torch.tensor(recon_pts, dtype=torch.float32),
         torch.tensor(gt_pts_np, dtype=torch.float32),
     )
@@ -270,7 +269,7 @@ def motion_evaluate(output_root, gt_path):
 
     if gt_info["type"] == "rotate":
         R = ArticulatedOperator.get_rotation_matrix(
-            tensor_motion["axis"], tensor_motion["theta"]
+            tensor_motion["axis"], -1 * tensor_motion["theta"]
         )
         gt_R = ArticulatedOperator.get_rotation_matrix(
             gt_info["axis_d"], gt_info["theta"]
@@ -357,7 +356,7 @@ if __name__ == "__main__":
         print(f"Scene address {gt_path} not found!")
         exit()
 
-    # vis_quality_evaluate(output_root)
+    vis_quality_evaluate(output_root)
 
     motion_metrics = motion_evaluate(output_root, gt_path)
     print(motion_metrics)

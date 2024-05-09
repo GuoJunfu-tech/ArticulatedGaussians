@@ -9,6 +9,8 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
+import sys
+
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
@@ -17,6 +19,10 @@ from math import exp
 # from scipy.spatial import KDTree
 
 from utils.knn_utils import knn
+
+sys.path.append("./submodules/chamfer-distance")
+from chamfer3D.dist_chamfer_3D import chamfer_3DDist
+from fscore import fscore
 
 
 def l1_loss(network_output, gt):
@@ -103,16 +109,22 @@ def chamfer_distance_loss(p1: torch.Tensor, p2: torch.Tensor) -> torch.Tensor:
     assert p1.shape[0] != 0
     assert p2.shape[0] != 0
 
-    p1_square = p1.pow(2).sum(dim=1, keepdim=True)  # [N, 1]
-    p2_square = p2.pow(2).sum(dim=1, keepdim=True)  # [M, 1]
-    dist = p1_square + p2_square.transpose(0, 1) - 2 * p1 @ p2.transpose(0, 1)  # [N, M]
+    chamLoss = chamfer_3DDist()
+    r_p = p1.cuda().unsqueeze(0)
+    g_p = p2.cuda().unsqueeze(0)
+    dist1, dist2, idx1, idx2 = chamLoss(r_p, g_p)
+
+    # p1_square = p1.pow(2).sum(dim=1, keepdim=True)  # [N, 1]
+    # p2_square = p2.pow(2).sum(dim=1, keepdim=True)  # [M, 1]
+    # dist = p1_square + p2_square.transpose(0, 1) - 2 * p1 @ p2.transpose(0, 1)  # [N, M]
 
     # Get min dist for each element in p1 to p2
-    min_dist_p1_to_p2, _ = dist.min(dim=1)
-    min_dist_p2_to_p1, _ = dist.min(dim=0)
+    # min_dist_p1_to_p2, _ = dist.min(dim=1)
+    # min_dist_p2_to_p1, _ = dist.min(dim=0)
 
     # Mean distance
-    return min_dist_p1_to_p2.mean() + min_dist_p2_to_p1.mean()
+    # return min_dist_p1_to_p2.mean() + min_dist_p2_to_p1.mean()
+    return dist1.mean()
 
 
 def opacity_loss(radii, gaussians, factor=0.1):
