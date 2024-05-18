@@ -142,6 +142,7 @@ def opacity_loss(radii, gaussians, factor=0.1):
 
 def ll1_ssim_loss(image, gt_image, factor):
     Ll1 = l1_loss(image, gt_image)
+    # print(Ll1)
     # ssim_loss = ssim(image, gt_image)
     loss = (1.0 - factor) * Ll1 + factor * (1.0 - ssim(image, gt_image))
     return loss

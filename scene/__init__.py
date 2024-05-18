@@ -58,10 +58,13 @@ class Scene:
             scene_info = sceneLoadTypeCallbacks["Colmap"](
                 args.source_path, args.images, args.eval
             )
-        elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
+        elif os.path.exists(
+            os.path.join(args.source_path, status, "transforms_train.json")
+        ):
+            path = args.source_path
             print("Found transforms_train.json file, assuming Blender data set!")
             scene_info = sceneLoadTypeCallbacks["Blender"](
-                args.source_path, args.white_background, args.eval
+                path, args.white_background, args.eval, status
             )
         elif os.path.exists(os.path.join(args.source_path, "cameras_sphere.npz")):
             print("Found cameras_sphere.npz file, assuming DTU data set!")
@@ -82,7 +85,7 @@ class Scene:
         elif os.path.exists(
             os.path.join(args.source_path, status, "camera_train.json")
         ):
-            path = os.path.join(args.source_path)
+            path = args.source_path
             print(
                 "Found articulated_transforms_train.json, assuming articulated sapien data set!"
             )
@@ -90,6 +93,7 @@ class Scene:
                 path, args.white_background, args.eval, status
             )
         else:
+            print(os.path.join(args.source_path, status, "transforms_train.json"))
             raise ValueError("Could not recognize scene type!")
 
         if not self.loaded_iter:

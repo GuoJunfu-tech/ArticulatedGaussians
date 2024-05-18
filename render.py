@@ -87,6 +87,9 @@ def render_set(
                         os.path.join(output_path, "{0:05d}".format(idx) + ".png"),
                     )
 
+        pcd_path = os.path.join(root, "point_cloud")
+        save_pts(gaussians, pcd_path)
+
     # gs_save_path = os.path.join(root, "gaussians.pkl")
     # pts = {
     #     "xyz": gaussians.get_xyz.detach().cpu(),
@@ -98,12 +101,29 @@ def render_set(
     #     pickle.dump(pts, f)
 
 
-def save_pts(gaussians):
+def tensor_to_pcd(tensor):
+    points_np = tensor.detach().cpu().numpy()
+
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points_np)
+    return pcd
+
+
+def save_pts(gaussians, root):
     xyz = gaussians.get_xyz
     mask = gaussians.get_movable_mask
 
     m_xyz = xyz[mask == 1]
-    u_xyz = xyz[mask == 0]
+    s_xyz = xyz[mask == 0]
+
+    m_pcd = tensor_to_pcd(m_xyz)
+    s_pcd = tensor_to_pcd(s_xyz)
+
+    m_path = os.path.join(root, "movable.ply")
+    s_path = os.path.join(root, "static.ply")
+
+    o3d.io.write_point_cloud(m_path, m_pcd)
+    o3d.io.write_point_cloud(s_path, s_pcd)
 
 
 if __name__ == "__main__":
@@ -124,7 +144,7 @@ if __name__ == "__main__":
     with open(motion_path, "r") as f:
         motion = json.load(f)
 
-    ply_path = os.path.join(output_root, "point_cloud/iteration_50000/point_cloud.ply")
+    ply_path = os.path.join(output_root, "point_cloud/iteration_40000/point_cloud.ply")
     if not os.path.exists(ply_path):
         print("No ply file found at " + ply_path)
         exit()
