@@ -53,8 +53,15 @@ class Prismatic:
             raise ValueError("[ERROR]::Wrong type of the articulated parameters!")
 
         self._axis = self.list_to_torch(data["axis"])
-        self._theta = self.list_to_torch(data["theta"])
-        self._pivot = self.list_to_torch(data["pivot"])
+        # self._theta = self.list_to_torch(data["theta"])
+        self._dist = self.list_to_torch(data["dist"])
+        # self._pivot = self.list_to_torch(data["pivot"])
+
+    @staticmethod
+    def list_to_torch(values: list) -> torch.Tensor:
+        return torch.tensor(
+            values, dtype=torch.float32, requires_grad=True, device="cuda"
+        )
 
 
 class Revolute:

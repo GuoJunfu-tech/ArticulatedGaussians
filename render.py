@@ -144,7 +144,7 @@ if __name__ == "__main__":
     with open(motion_path, "r") as f:
         motion = json.load(f)
 
-    ply_path = os.path.join(output_root, "point_cloud/iteration_40000/point_cloud.ply")
+    ply_path = os.path.join(output_root, "point_cloud/iteration_30000/point_cloud.ply")
     if not os.path.exists(ply_path):
         print("No ply file found at " + ply_path)
         exit()

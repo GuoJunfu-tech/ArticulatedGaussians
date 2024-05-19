@@ -60,12 +60,19 @@ def geo_quality_evaluate(pred_info, gt_path):
     assert xyz_d.shape[0] + xyz_s.shape[0] == xyz.shape[0]
 
     gt_w_ply_path = os.path.join(gt_path, "start", "start_rotate.ply")
-    gt_s_ply_path = os.path.join(gt_path, "start", "start_static_rotate.ply")
-    gt_d_ply_path = os.path.join(gt_path, "start", "start_dynamic_rotate.ply")
-
     cd_w = compute_recon_error(xyz, gt_w_ply_path)
-    cd_d = compute_recon_error(xyz_d, gt_d_ply_path)
-    cd_s = compute_recon_error(xyz_s, gt_s_ply_path)
+    try:
+        gt_s_ply_path = os.path.join(gt_path, "start", "start_static_rotate.ply")
+        cd_s = compute_recon_error(xyz_s, gt_s_ply_path)
+    except:
+        cd_s = torch.empty(0)
+
+    try:
+        gt_d_ply_path = os.path.join(gt_path, "start", "start_dynamic_rotate.ply")
+        cd_d = compute_recon_error(xyz_d, gt_d_ply_path)
+    except:
+        cd_d = torch.empty(0)
+
     return {"cd_w": cd_w.item(), "cd_d": cd_d.item(), "cd_s": cd_s.item()}
 
 
@@ -361,7 +368,7 @@ if __name__ == "__main__":
     motion_metrics = motion_evaluate(output_root, gt_path)
     print(motion_metrics)
 
-    ply_path = os.path.join(output_root, "point_cloud/iteration_50000/point_cloud.ply")
+    ply_path = os.path.join(output_root, "point_cloud/iteration_40000/point_cloud.ply")
     pred_info = load_pred_ply(ply_path)
     geo_eval_result = geo_quality_evaluate(pred_info, gt_path)
     print(geo_eval_result)
