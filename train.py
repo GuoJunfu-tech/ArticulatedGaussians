@@ -87,6 +87,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     # grad_counter = 0
 
     arti_params = revolute
+    # arti_params = prismatic
 
     object_name = dataset.model_path.split("/")[-1]
 
@@ -139,7 +140,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 _, _, (d_xyz, d_rotations) = deformGS.step(gaussians)
                 ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
                 ndx = (ndx - min(ndx)) / (max(ndx) - min(ndx))
-                mask_x = ndx > 3e-1
+                mask_x = ndx > 5e-1
 
                 # mask_u = mask_init(ndr, ndx, 3e-1)  # TODO set optional threshold
                 xyz = gaussians.get_xyz.detach()
@@ -287,11 +288,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         if opt.pretrain < iteration < opt.update_params:
             source_xyz = new_xyz[gaussians.get_movable_mask == 1]
             loss_cd = chamfer_distance_loss(deformed_xyz, source_xyz)
+            # loss_cd = 0
 
         weighted_loss_arap = loss_arap
         if iteration < opt.update_params:
             # w = 1 / (loss_start.item() + 1e-6) * 1e-3
             loss = loss_end + loss_start + loss_cd + weighted_loss_arap
+            # loss = loss_end + loss_start + weighted_loss_arap
         else:
             # loss = loss_end + loss_start
             # when joint optimization, update the state with higher loss
