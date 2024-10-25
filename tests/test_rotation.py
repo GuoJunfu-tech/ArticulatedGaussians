@@ -2,11 +2,16 @@ import random
 import math
 import torch
 import unittest
+import sys
+from os import path
 
+sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
 from utils.deform_utils import ArticulatedOperator
 
 
 class TestRotationOperator(unittest.TestCase):
+    """rotate a circle, and test if it can rotate to the origin location
+    """
     def test_rotate_a_round(self):
         rotate = ArticulatedOperator()
         for test_id in range(10):
