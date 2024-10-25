@@ -147,6 +147,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 deformed_xyz = xyz + d_xyz.detach()
                 deformed_xyz = deformed_xyz[mask_x == 1].detach()
 
+            # TODO
+
             data = {
                 "gaussians": gaussians,
                 "dx": d_xyz,
