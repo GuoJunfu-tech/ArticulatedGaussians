@@ -42,7 +42,7 @@ def transform_pcd(pcd):
         (1, 0, 0), requires_grad=False, device=x.device, dtype=torch.float32
     )
     pivot = torch.tensor(
-        (0, -1.5, 0), requires_grad=False, device=x.device, dtype=torch.float32
+        (0, -5.5, 0), requires_grad=False, device=x.device, dtype=torch.float32
     )
     theta = torch.tensor(
         60 * math.pi / 180, requires_grad=False, device=x.device, dtype=torch.float32
@@ -55,7 +55,7 @@ def transform_pcd(pcd):
     return transformed_pcd
 
 
-def find_nearest_point_paris(pcd, target_pcd, num_pairs):
+def find_nearest_point_pairs(pcd, target_pcd, num_pairs):
     target_pcd_tree = o3d.geometry.KDTreeFlann(target_pcd)
 
     point_pairs = []
@@ -71,8 +71,7 @@ def find_nearest_point_paris(pcd, target_pcd, num_pairs):
     distances = np.array(distances)
 
     # 找到最小的五个距离及其索引
-    k = 5
-    min_dist_indices = np.argsort(distances)[:k]
+    min_dist_indices = np.argsort(distances)[:num_pairs]
 
     # 提取最近的五个点对
     nearest_pairs = point_pairs[min_dist_indices]
@@ -81,7 +80,7 @@ def find_nearest_point_paris(pcd, target_pcd, num_pairs):
 
 # core test function
 def estimate_axis(pcd, target_pcd, num_pairs=5):
-    nearest_pairs = find_nearest_point_paris(pcd, target_pcd, num_pairs)
+    nearest_pairs = find_nearest_point_pairs(pcd, target_pcd, num_pairs)
     x_points, y_points = [], []
     for x, y in nearest_pairs:
         x_points.append(x)
@@ -134,6 +133,8 @@ def visualize_results(
         x_points.append(x)
         y_points.append(y)
 
+    print(pairs)
+
     points = o3d.utility.Vector3dVector(np.vstack((x_points, y_points)))
     L = len(pairs)
     lines = []
@@ -166,7 +167,7 @@ if __name__ == "__main__":
 
     target_pcd = transform_pcd(pcd)
 
-    pairs, mdpt, ppt, tppt, arti_info = estimate_axis(pcd, target_pcd)
+    pairs, mdpt, ppt, tppt, arti_info = estimate_axis(pcd, target_pcd, 30)
     theta, pivot, axis = arti_info
     op = ArticulatedOperator()
     x = torch.tensor(

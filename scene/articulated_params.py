@@ -65,29 +65,46 @@ class Prismatic:
 
 
 class Revolute:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        axis=None,
+        theta=None,
+        pivot=None,
+    ) -> None:
         # Initial
         self._type = "revolute"
-        self._axis = torch.tensor(
-            [0, 1.0, 0],
-            dtype=torch.float32,
-            requires_grad=True,
-            device="cuda",
-        )
-        self._theta = float_to_torch(0.0)
-        # gt: [0.73, 0.175, -0.152],
-        self._pivot = torch.tensor(
-            [0.0, 0.0, 0.0],
-            dtype=torch.float32,
-            requires_grad=True,
-            device="cuda",
-        )
+        self.set_params(axis, theta, pivot)
+
         self.optimizer = torch.optim.Adam(
             [self._axis, self._pivot, self._theta], lr=0.05, eps=2e-15
         )
         self.scheduler = torch.optim.lr_scheduler.StepLR(
             self.optimizer, step_size=100, gamma=0.8
         )
+
+    def set_params(self, axis=None, theta=None, pivot=None):
+        if axis is None:
+            axis = [0, 1.0, 0]
+        self._axis = torch.tensor(
+            axis,
+            dtype=torch.float32,
+            requires_grad=True,
+            device="cuda",
+        )
+        if theta is None:
+            theta = 0.0
+        self._theta = float_to_torch(theta)
+        if pivot is None:
+            pivot = [0.0, 0.0, 0.0]
+        self._pivot = torch.tensor(
+            pivot,
+            dtype=torch.float32,
+            requires_grad=True,
+            device="cuda",
+        )
+        # self._axis.to(device="cuda")
+        # self._pivot.to(device="cuda")
+        # self._theta.to(device="cuda")
 
     @property
     def type(self):

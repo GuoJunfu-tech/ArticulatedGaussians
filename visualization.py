@@ -260,7 +260,7 @@ def test_cd_loss():
 
 
 if __name__ == "__main__":
-    with open("./load_data/washer.pkl", "rb") as f:
+    with open("./stage_2.pkl", "rb") as f:
         # with open("./final_params.pkl", "rb") as f:
         data = pickle.load(f)
 
@@ -282,7 +282,7 @@ if __name__ == "__main__":
     draw_graph(xyz, ndr)
     draw_graph(xyz, ndx)
     # mask_x, _ = build_mask(ndx.reshape(-1, 1), "gmm", 20)
-    mask_x = ndx > 8e-1
+    mask_x = ndx > 2e-1
     # mask_r, _ = build_mask(ndr.reshape(-1, 1), "gmm", 20)
     # mask_union = np.bitwise_and(mask_x, mask_r)
 

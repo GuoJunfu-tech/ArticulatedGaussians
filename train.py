@@ -13,7 +13,8 @@ import numpy as np
 
 import os
 import sys
-import math
+
+# import math
 from argparse import ArgumentParser, Namespace
 import dill as pickle
 
@@ -30,6 +31,7 @@ from utils.classification_utils import build_mask, mask_init
 from utils.viewpoint_utils import ViewpointLoader
 from utils.visualization_utils import render_results
 from utils.knn_utils import knn
+from utils.arti_estimation_utils import estimate_arti_info
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
 import copy
@@ -87,7 +89,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     # grad_counter = 0
 
     arti_params = revolute
-    # arti_params = prismatic
+    # # arti_params = prismatic
 
     object_name = dataset.model_path.split("/")[-1]
 
@@ -140,14 +142,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 _, _, (d_xyz, d_rotations) = deformGS.step(gaussians)
                 ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
                 ndx = (ndx - min(ndx)) / (max(ndx) - min(ndx))
-                mask_x = ndx > 5e-1
+                mask_xyz = ndx > 1e-1
 
                 # mask_u = mask_init(ndr, ndx, 3e-1)  # TODO set optional threshold
                 xyz = gaussians.get_xyz.detach()
                 deformed_xyz = xyz + d_xyz.detach()
-                deformed_xyz = deformed_xyz[mask_x == 1].detach()
+                deformed_xyz = deformed_xyz[mask_xyz == 1].detach()
 
-            # TODO
+            gaussians.initialize_mask(mask_xyz)
+
+            # param init
+            # if arti_params.type == "revolute":
+            #     axis, pivot, theta = estimate_arti_info(
+            #         xyz[mask_xyz == 1], deformed_xyz
+            #     )
+            #     arti_params.set_params(axis, theta/2, pivot)
 
             data = {
                 "gaussians": gaussians,
@@ -164,20 +173,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
                 pickle.dump(data, f)
                 print(" stage 2 data saved")
 
-            gaussians.initialize_mask(mask_x)
             continue
 
         if iteration == opt.update_params:
             print("[Training]::step 3 is over, now update the articulated params")
-            # print(
-            #     f"axis: {revolute.axis.tolist()}\n pivot: {revolute.pivot.tolist()}\n theta: {revolute.theta}\n"
-            # )
             with torch.no_grad():
                 _, _, (d_xyz, d_rotations) = deformGS.step(gaussians)
                 ndx = torch.norm(d_xyz, dim=-1).detach().cpu().numpy()
                 ndx = (ndx - min(ndx)) / (max(ndx) - min(ndx))
-                mask_x = ndx > 1e-1
-                gaussians.initialize_mask(mask_x)
+                mask_xyz = ndx > 1e-1
+                gaussians.initialize_mask(mask_xyz)
 
                 if arti_params.type == "revolute":
                     arti_params.theta_normalization()
@@ -295,7 +300,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
         weighted_loss_arap = loss_arap
         if iteration < opt.update_params:
             # w = 1 / (loss_start.item() + 1e-6) * 1e-3
-            loss = loss_end + loss_start + loss_cd + weighted_loss_arap
+            loss = loss_end + loss_start + 0.1 * loss_cd + weighted_loss_arap
             # loss = loss_end + loss_start + weighted_loss_arap
         else:
             # loss = loss_end + loss_start
@@ -644,12 +649,13 @@ if __name__ == "__main__":
         type=int,
         default=[
             # 5500,
-            11000,
-            15500,
+            10000,
+            14500,
+            16500,
             19000,
             22000,
             24000,
-            30000,
+            32000,
             35000,
             38000,
             42000,

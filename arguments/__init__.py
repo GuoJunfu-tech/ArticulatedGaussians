@@ -108,11 +108,11 @@ class OptimizationParams(ParamGroup):
         self.densify_until_iter = 35_000
         self.densify_grad_threshold = 0.0002
 
-        self.only_train_single_frame = 10000
-        self.pretrain = 15_000
-        self.update_params = 20000
-        self.update_mask = 30_000
-        self.stop_densify = 50000
+        self.only_train_single_frame = 6000
+        self.pretrain = 11_000
+        self.update_params = 15000
+        self.update_mask = 20_000
+        self.stop_densify = 30000
 
         self.inverse_deform_interval = 500
 
