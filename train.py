@@ -88,8 +88,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     # is_end_frame_with_grad = False
     # grad_counter = 0
 
-    arti_params = revolute
-    # # arti_params = prismatic
+    # arti_params = revolute
+    arti_params = prismatic
 
     object_name = dataset.model_path.split("/")[-1]
 
