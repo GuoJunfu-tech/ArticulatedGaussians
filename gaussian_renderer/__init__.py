@@ -142,9 +142,9 @@ def render(
     rendered_image, radii, depth = rasterizer(
         means3D=means3D,
         means2D=means2D,
+        opacities=opacity,
         shs=shs,
         colors_precomp=colors_precomp,
-        opacities=opacity,
         scales=scales,
         rotations=rotations,
         cov3D_precomp=cov3D_precomp,

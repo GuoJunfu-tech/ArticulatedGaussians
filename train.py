@@ -54,7 +54,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations):
     deformArti = DeformModel()
 
     deformGS = DeformGS(opt)
-    # deformGS.train_setting(opt)
     revolute = Revolute()
     prismatic = Prismatic()
 
@@ -649,6 +648,7 @@ if __name__ == "__main__":
         type=int,
         default=[
             # 5500,
+            7000,
             10000,
             14500,
             16500,
