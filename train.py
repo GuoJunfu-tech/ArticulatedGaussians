@@ -34,6 +34,8 @@ from utils.knn_utils import knn
 from utils.arti_estimation_utils import estimate_arti_info
 from arguments import ModelParams, PipelineParams, OptimizationParams
 
+from omegaconf import OmegaConf
+
 import copy
 
 try:
@@ -44,7 +46,7 @@ except ImportError:
     TENSORBOARD_FOUND = False
 
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations):
+def training(cfg, dataset, opt, pipe, testing_iterations, saving_iterations):
     if opt.tb_writer:
         tb_writer = prepare_output_and_logger(dataset)
     else:
@@ -639,6 +641,13 @@ if __name__ == "__main__":
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
+
+    parser.add_argument(
+        "--cfg_file",
+        required=False,
+        type=str,
+        default="./cfg_files/train.yaml",
+    )
     parser.add_argument("--ip", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=6009)
     parser.add_argument("--detect_anomaly", action="store_true", default=False)
@@ -674,6 +683,8 @@ if __name__ == "__main__":
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
 
+    cfg = OmegaConf.load(args.cfg_file)
+
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
@@ -681,6 +692,7 @@ if __name__ == "__main__":
     # network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     training(
+        cfg,
         lp.extract(args),
         op.extract(args),
         pp.extract(args),
