@@ -27,8 +27,9 @@ class Scene:
 
     def __init__(
         self,
-        args: ModelParams,
         gaussians: GaussianModel,
+        paths,
+        ppl_params,
         status=None,
         load_iteration=None,
         shuffle=True,
@@ -38,14 +39,14 @@ class Scene:
         """
         :param path: Path to colmap scene main folder.
         """
-        self.model_path = args.model_path
+        self.output_path = paths.output_path
         self.loaded_iter = None
         self.gaussians = gaussians
 
         if load_iteration:
             if load_iteration == -1:
                 self.loaded_iter = searchForMaxIteration(
-                    os.path.join(self.model_path, "point_cloud")
+                    os.path.join(self.output_path, "point_cloud")
                 )
             else:
                 self.loaded_iter = load_iteration
@@ -54,51 +55,53 @@ class Scene:
         self.train_cameras = {}
         self.test_cameras = {}
 
-        if os.path.exists(os.path.join(args.source_path, "sparse")):
+        if os.path.exists(os.path.join(paths.source_path, "sparse")):
             scene_info = sceneLoadTypeCallbacks["Colmap"](
-                args.source_path, args.images, args.eval
+                paths.source_path, paths.images, ppl_params.eval
             )
         elif os.path.exists(
-            os.path.join(args.source_path, status, "transforms_train.json")
+            os.path.join(paths.source_path, status, "transforms_train.json")
         ):
-            path = args.source_path
+            path = paths.source_path
             print("Found transforms_train.json file, assuming Blender data set!")
             scene_info = sceneLoadTypeCallbacks["Blender"](
-                path, args.white_background, args.eval, status
+                path, ppl_params.white_background, ppl_params.eval, status
             )
-        elif os.path.exists(os.path.join(args.source_path, "cameras_sphere.npz")):
+        elif os.path.exists(os.path.join(paths.source_path, "cameras_sphere.npz")):
             print("Found cameras_sphere.npz file, assuming DTU data set!")
             scene_info = sceneLoadTypeCallbacks["DTU"](
-                args.source_path, "cameras_sphere.npz", "cameras_sphere.npz"
+                paths.source_path, "cameras_sphere.npz", "cameras_sphere.npz"
             )
-        elif os.path.exists(os.path.join(args.source_path, "dataset.json")):
+        elif os.path.exists(os.path.join(paths.source_path, "dataset.json")):
             print("Found dataset.json file, assuming Nerfies data set!")
-            scene_info = sceneLoadTypeCallbacks["nerfies"](args.source_path, args.eval)
-        elif os.path.exists(os.path.join(args.source_path, "poses_bounds.npy")):
+            scene_info = sceneLoadTypeCallbacks["nerfies"](
+                paths.source_path, ppl_params.eval
+            )
+        elif os.path.exists(os.path.join(paths.source_path, "poses_bounds.npy")):
             print("Found calibration_full.json, assuming Neu3D data set!")
             scene_info = sceneLoadTypeCallbacks["plenopticVideo"](
-                args.source_path, args.eval, 24
+                paths.source_path, ppl_params.eval, 24
             )
-        elif os.path.exists(os.path.join(args.source_path, "transforms.json")):
+        elif os.path.exists(os.path.join(paths.source_path, "transforms.json")):
             print("Found calibration_full.json, assuming Dynamic-360 data set!")
-            scene_info = sceneLoadTypeCallbacks["dynamic360"](args.source_path)
+            scene_info = sceneLoadTypeCallbacks["dynamic360"](paths.source_path)
         elif os.path.exists(
-            os.path.join(args.source_path, status, "camera_train.json")
+            os.path.join(paths.source_path, status, "camera_train.json")
         ):
-            path = args.source_path
+            path = paths.source_path
             print(
                 "Found articulated_transforms_train.json, assuming articulated sapien data set!"
             )
             scene_info = sceneLoadTypeCallbacks["articulated"](
-                path, args.white_background, args.eval, status
+                path, ppl_params.white_background, ppl_params.eval, status
             )
         else:
-            print(os.path.join(args.source_path, status, "transforms_train.json"))
+            print(os.path.join(paths.source_path, status, "transforms_train.json"))
             raise ValueError("Could not recognize scene type!")
 
         if not self.loaded_iter:
             with open(scene_info.ply_path, "rb") as src_file, open(
-                os.path.join(self.model_path, "input.ply"), "wb"
+                os.path.join(self.output_path, "input.ply"), "wb"
             ) as dest_file:
                 dest_file.write(src_file.read())
             json_cams = []
@@ -109,7 +112,7 @@ class Scene:
                 camlist.extend(scene_info.train_cameras)
             for id, cam in enumerate(camlist):
                 json_cams.append(camera_to_JSON(id, cam))
-            with open(os.path.join(self.model_path, "cameras.json"), "w") as file:
+            with open(os.path.join(self.output_path, "cameras.json"), "w") as file:
                 json.dump(json_cams, file)
 
         if shuffle:
@@ -125,23 +128,13 @@ class Scene:
         for resolution_scale in resolution_scales:
             print("Loading Training Cameras")
             self.train_cameras[resolution_scale] = cameraList_from_camInfos(
-                scene_info.train_cameras, resolution_scale, args
+                scene_info.train_cameras, resolution_scale, ppl_params
             )
             print("Loading Test Cameras")
             self.test_cameras[resolution_scale] = cameraList_from_camInfos(
-                scene_info.test_cameras, resolution_scale, args
+                scene_info.test_cameras, resolution_scale, ppl_params
             )
 
-        # if self.loaded_iter:
-        # self.gaussians.load_ply(
-        #     os.path.join(
-        #         self.model_path,
-        #         "point_cloud",
-        #         "iteration_" + str(self.loaded_iter),
-        #         "point_cloud.ply",
-        #     ),
-        #     og_number_points=len(scene_info.point_cloud.points),
-        # )
         if ply_path:
             self.gaussians.load_ply(ply_path)
         else:
@@ -149,7 +142,7 @@ class Scene:
 
     def save(self, iteration):
         point_cloud_path = os.path.join(
-            self.model_path, "point_cloud/iteration_{}".format(iteration)
+            self.output_path, "point_cloud/iteration_{}".format(iteration)
         )
         self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
 

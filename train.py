@@ -46,12 +46,16 @@ except ImportError:
     TENSORBOARD_FOUND = False
 
 
-def training(cfg, dataset, opt, pipe, testing_iterations, saving_iterations):
-    if opt.tb_writer:
-        tb_writer = prepare_output_and_logger(dataset)
+def training(cfg, opt, pipe, testing_iterations, saving_iterations):
+    ppl_params, paths = cfg.Pipeline, cfg.Paths
+    print(paths)
+
+    if ppl_params.use_tb_writer:
+        tb_writer = prepare_output_and_logger(paths)
     else:
         tb_writer = False
-    gaussians = GaussianModel(dataset.sh_degree)
+
+    gaussians = GaussianModel(cfg.Optimize.sh_degree)
 
     deformArti = DeformModel()
 
@@ -59,12 +63,12 @@ def training(cfg, dataset, opt, pipe, testing_iterations, saving_iterations):
     revolute = Revolute()
     prismatic = Prismatic()
 
-    scene_start = Scene(dataset, gaussians, status="start")
-    scene_end = Scene(dataset, gaussians, status="end")
+    scene_start = Scene(gaussians, paths, ppl_params, status="start")
+    scene_end = Scene(gaussians, paths, ppl_params, status="end")
     viewpoint_loader = ViewpointLoader(scene_start, scene_end)
     gaussians.training_setup(opt)
 
-    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
+    bg_color = [1, 1, 1] if ppl_params.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
     iter_start = torch.cuda.Event(enable_timing=True)
     iter_end = torch.cuda.Event(enable_timing=True)
@@ -92,7 +96,7 @@ def training(cfg, dataset, opt, pipe, testing_iterations, saving_iterations):
     arti_params = revolute
     # # arti_params = prismatic
 
-    object_name = dataset.model_path.split("/")[-1]
+    object_name = paths.output_path.split("/")[-1]
 
     for iteration in range(start, end + 1):
         iter_start.record()
@@ -100,9 +104,8 @@ def training(cfg, dataset, opt, pipe, testing_iterations, saving_iterations):
         # Every 1000 its we increase the levels of SH up to a maximum degree
 
         if iteration == end:
-            # deform.save_weights(args.model_path, iteration)
             if end == opt.update_mask:
-                object_name = dataset.model_path.split("/")[-1]
+                object_name = paths.output_path.split("/")[-1]
                 render_results(
                     viewpoint_loader.get_cameras("start"),
                     gaussians,
@@ -117,7 +120,7 @@ def training(cfg, dataset, opt, pipe, testing_iterations, saving_iterations):
 
             print("Training finished.")
             scene_start.save(iteration)
-            save_motion_path = os.path.join(scene_start.model_path, "motion.json")
+            save_motion_path = os.path.join(scene_start.output_path, "motion.json")
             arti_params.save_json(save_motion_path)
 
             print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
@@ -206,7 +209,7 @@ def training(cfg, dataset, opt, pipe, testing_iterations, saving_iterations):
                 gaussians.oneupSHdegree()  # TODO temporary
 
             viewpoint_cam_start = viewpoint_loader.get_viewpoint_cam(
-                status="start", load2device=dataset.load2gpu_on_the_fly
+                status="start", load2device=ppl_params.load2gpu_on_the_fly
             )
             new_xyz, new_rotations = None, None
         # elif opt.only_train_single_frame < iteration < opt.pretrain:
@@ -215,12 +218,12 @@ def training(cfg, dataset, opt, pipe, testing_iterations, saving_iterations):
         #     )
         elif opt.only_train_single_frame < iteration < opt.update_params:
             viewpoint_cam_end = viewpoint_loader.get_viewpoint_cam(
-                status="end", load2device=dataset.load2gpu_on_the_fly
+                status="end", load2device=ppl_params.load2gpu_on_the_fly
             )
 
         elif opt.update_params < iteration < opt.update_mask:
             viewpoint_cam_start, viewpoint_cam_end = (
-                viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
+                viewpoint_loader.get_viewpoint_cam_dual(ppl_params.load2gpu_on_the_fly)
             )
             # if iteration % 1000 == 0:
             # gaussians.oneupSHdegree()
@@ -262,7 +265,7 @@ def training(cfg, dataset, opt, pipe, testing_iterations, saving_iterations):
             )
             gt_image_start = viewpoint_cam_start.original_image.cuda()
             loss_start = ll1_ssim_loss(image_start, gt_image_start, opt.lambda_dssim)
-            if dataset.load2gpu_on_the_fly:
+            if ppl_params.load2gpu_on_the_fly:
                 viewpoint_cam_start.load2device("cpu")
 
         loss_end = 0.0
@@ -324,7 +327,7 @@ def training(cfg, dataset, opt, pipe, testing_iterations, saving_iterations):
 
         iter_end.record()
 
-        if dataset.load2gpu_on_the_fly:
+        if ppl_params.load2gpu_on_the_fly:
             viewpoint_cam_end.load2device("cpu")
 
         with torch.no_grad():
@@ -373,7 +376,7 @@ def training(cfg, dataset, opt, pipe, testing_iterations, saving_iterations):
                         deform,
                         arti_params,
                         tb_writer,
-                        dataset.load2gpu_on_the_fly,
+                        ppl_params.load2gpu_on_the_fly,
                         is_first_test,
                     )
 
@@ -385,7 +388,7 @@ def training(cfg, dataset, opt, pipe, testing_iterations, saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene_start.save(iteration)
                 save_motion_path = os.path.join(
-                    scene_start.model_path, f"motion_{iteration}.json"
+                    scene_start.output_path, f"motion_{iteration}.json"
                 )
                 arti_params.save_json(save_motion_path)
 
@@ -436,7 +439,8 @@ def training(cfg, dataset, opt, pipe, testing_iterations, saving_iterations):
                     )
 
                     if iteration % opt.opacity_reset_interval == 0 or (
-                        dataset.white_background and iteration == opt.densify_from_iter
+                        ppl_params.white_background
+                        and iteration == opt.densify_from_iter
                     ):
                         gaussians.reset_opacity()
 
@@ -467,23 +471,23 @@ def training(cfg, dataset, opt, pipe, testing_iterations, saving_iterations):
 
 
 def prepare_output_and_logger(args):
-    if not args.model_path:
+    if not args.output_path:
         if os.getenv("OAR_JOB_ID"):
             unique_str = os.getenv("OAR_JOB_ID")
         else:
             unique_str = str(uuid.uuid4())
-        args.model_path = os.path.join("./output/", unique_str[0:10])
+        args.output_path = os.path.join("./output/", unique_str[0:10])
 
     # Set up output folder
-    print("Output folder: {}".format(args.model_path))
-    os.makedirs(args.model_path, exist_ok=True)
-    with open(os.path.join(args.model_path, "cfg_args"), "w") as cfg_log_f:
+    print("Output folder: {}".format(args.output_path))
+    os.makedirs(args.output_path, exist_ok=True)
+    with open(os.path.join(args.output_path, "cfg_args"), "w") as cfg_log_f:
         cfg_log_f.write(str(Namespace(**vars(args))))
 
     # Create Tensorboard writer
     tb_writer = None
     if TENSORBOARD_FOUND:
-        tb_writer = SummaryWriter(args.model_path)
+        tb_writer = SummaryWriter(args.output_path)
     else:
         print("Tensorboard not available: not logging progress")
     return tb_writer
@@ -693,7 +697,7 @@ if __name__ == "__main__":
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     training(
         cfg,
-        lp.extract(args),
+        # lp.extract(args),
         op.extract(args),
         pp.extract(args),
         args.test_iterations,

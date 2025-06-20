@@ -1,18 +1,25 @@
-DatasetPaths:
-  source_path: "./data/arm_scene_v2"
-  output_path: "./output/arm_scene_v2"
+Paths:
+  source_path: "./data/oven/101917"
+  output_path: "./output/test"
 
 Pipeline:
+  total_iterations: 55_000
   save_its: [400, 1000, 7000, 30000]
   test_its: [7000, 10000, 14500, 16500]
+  use_tb_writer: True
+  eval: False
   convert_SHs_python: False
   compute_cov3D_python: False
   debug: False
   antialiasing: False
   estimate_pcd: False
+  white_background: False
+  load2gpu_on_the_fly: False
+  data_device: "cuda"
+  resolution: 1.0
 
 Optimize:
-  iterations: 1000
+  sh_degree: 3
   position_lr_init: 0.00016
   position_lr_final: 0.0000016
   alpha_lr: 0.00016
