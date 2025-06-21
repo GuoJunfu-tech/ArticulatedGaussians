@@ -47,7 +47,7 @@ except ImportError:
 
 
 def training(cfg, opt, pipe, testing_iterations, saving_iterations):
-    ppl_params, paths = cfg.Pipeline, cfg.Paths
+    ppl_params, paths, opt_params = cfg.Pipeline, cfg.Paths, cfg.Optimize
     print(paths)
 
     if ppl_params.use_tb_writer:
@@ -55,18 +55,18 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
     else:
         tb_writer = False
 
-    gaussians = GaussianModel(cfg.Optimize.sh_degree)
+    gaussians = GaussianModel(cfg.Gaussians.sh_degree)
 
     deformArti = DeformModel()
 
-    deformGS = DeformGS(opt)
+    deformGS = DeformGS(cfg.DeformNet)
     revolute = Revolute()
     prismatic = Prismatic()
 
     scene_start = Scene(gaussians, paths, ppl_params, status="start")
     scene_end = Scene(gaussians, paths, ppl_params, status="end")
     viewpoint_loader = ViewpointLoader(scene_start, scene_end)
-    gaussians.training_setup(opt)
+    gaussians.training_setup(cfg.Gaussians)
 
     bg_color = [1, 1, 1] if ppl_params.white_background else [0, 0, 0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")

@@ -19,12 +19,25 @@ Pipeline:
   resolution: 1.0
 
 Optimize:
-  sh_degree: 3
+  densify_from_iter: 50
+  densify_until_iter: 15_000
+  densify_grad_threshold: 0.0002
+  depth_l1_weight_init: 1.0
+  depth_l1_weight_final: 0.01
+  random_background: False
+  optimizer_type: "default"
+
+DeformNet:
   position_lr_init: 0.00016
   position_lr_final: 0.0000016
+  position_lr_delay_mult: 0.01
+  deform_lr_max_steps: 35_000
+
+
+Gaussians:
+  sh_degree: 3
   alpha_lr: 0.00016
   shift_along_normal_lr: 0.0001
-  position_lr_delay_mult: 0.01
   position_lr_max_steps: 30_000
   feature_lr: 0.0025
   opacity_lr: 0.025
@@ -38,10 +51,6 @@ Optimize:
   lambda_dssim: 0.2
   densification_interval: 50
   opacity_reset_interval: 3000
-  densify_from_iter: 50
-  densify_until_iter: 15_000
-  densify_grad_threshold: 0.0002
-  depth_l1_weight_init: 1.0
-  depth_l1_weight_final: 0.01
-  random_background: False
-  optimizer_type: "default"
+  position_lr_init: 0.00016
+  position_lr_final: 0.0000016
+  position_lr_delay_mult: 0.01
