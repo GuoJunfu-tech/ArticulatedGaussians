@@ -88,11 +88,8 @@ def training(cfg):
     deform = None
     neighbor_dist = None
     deformed_xyz = torch.empty(0)
-    # is_end_frame_with_grad = False
-    # grad_counter = 0
 
-    arti_params = revolute
-    # # arti_params = prismatic
+    arti_params = revolute  # TODO change back to mode switch
 
     object_name = paths.output_path.split("/")[-1]
 
@@ -146,35 +143,11 @@ def training(cfg):
                 ndx = (ndx - min(ndx)) / (max(ndx) - min(ndx))
                 mask_xyz = ndx > 1e-1
 
-                # mask_u = mask_init(ndr, ndx, 3e-1)  # TODO set optional threshold
                 xyz = gaussians.get_xyz.detach()
                 deformed_xyz = xyz + d_xyz.detach()
                 deformed_xyz = deformed_xyz[mask_xyz == 1].detach()
 
             gaussians.initialize_mask(mask_xyz)
-
-            # param init
-            # if arti_params.type == "revolute":
-            #     axis, pivot, theta = estimate_arti_info(
-            #         xyz[mask_xyz == 1], deformed_xyz
-            #     )
-            #     arti_params.set_params(axis, theta/2, pivot)
-
-            data = {
-                "gaussians": gaussians,
-                "dx": d_xyz,
-                "dr": d_rotations,
-                # "deformModel": deform,
-                "params": {
-                    "axis": revolute.axis.tolist(),
-                    "pivot": revolute.pivot.tolist(),
-                },
-            }
-
-            with open("./stage_2.pkl", "wb") as f:
-                pickle.dump(data, f)
-                print(" stage 2 data saved")
-
             continue
 
         if iteration == ppl_params.rigid_trans:
@@ -210,10 +183,6 @@ def training(cfg):
                 status="start", load2device=ppl_params.load2gpu_on_the_fly
             )
             new_xyz, new_rotations = None, None
-        # elif ppl_params.only_train_single_frame < iteration < ppl_params.deform_net:
-        #     viewpoint_cam_start, viewpoint_cam_end = (
-        #         viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
-        #     )
         elif ppl_params.only_train_single_frame < iteration < ppl_params.rigid_trans:
             viewpoint_cam_end = viewpoint_loader.get_viewpoint_cam(
                 status="end", load2device=ppl_params.load2gpu_on_the_fly
@@ -223,8 +192,6 @@ def training(cfg):
             viewpoint_cam_start, viewpoint_cam_end = (
                 viewpoint_loader.get_viewpoint_cam_dual(ppl_params.load2gpu_on_the_fly)
             )
-            # if iteration % 1000 == 0:
-            # gaussians.oneupSHdegree()
 
         # ------------------- core: deformation ----------------------------
 
@@ -272,8 +239,6 @@ def training(cfg):
 
         loss_end = 0.0
         if ppl_params.only_train_single_frame < iteration:
-            # or ( ppl_params.end_interval / 2 <= iter_counter < ppl_params.end_interval
-            # ):
             render_pkg_re = render(
                 viewpoint_cam_end,
                 gaussians,
@@ -305,15 +270,8 @@ def training(cfg):
 
         weighted_loss_arap = loss_arap
         if iteration < ppl_params.rigid_trans:
-            # w = 1 / (loss_start.item() + 1e-6) * 1e-3
             loss = loss_end + loss_start + 0.1 * loss_cd + weighted_loss_arap
-            # loss = loss_end + loss_start + weighted_loss_arap
         else:
-            # loss = loss_end + loss_start
-            # when joint optimization, update the state with higher loss
-            # enlarge_weight = 2.
-            # loss = 2 * loss_end + loss_start
-            # total_loss = loss_end.detach().clone + loss_start.detach().clone()
             weight_start = loss_start.item() / (loss_end.item() + 1e-8)
             weight_end = loss_end.item() / (loss_start.item() + 1e-8)
             weight_sum = weight_end + weight_start
@@ -321,9 +279,6 @@ def training(cfg):
                 weight_start / weight_sum * loss_start
                 + weight_end / weight_sum * loss_end
             )
-            # loss = (1.0 / loss_end.item()) * loss_start + (
-            #     1.0 / loss_start.item()
-            # ) * loss_end
 
         loss.backward()
 
@@ -339,7 +294,6 @@ def training(cfg):
                     {
                         "m_l": f"{loss_end:.{7}f}",
                         "u_l": f"{loss_start:.{7}f}",
-                        # "d_l": f"{dist_loss:.{7}f}",
                     }
                 )
                 progress_bar.update(10)
@@ -599,17 +553,6 @@ def eval(
                 print(
                     f"[ITER {iteration}] Evaluating {type} -{status}: L1 {l1_test} PSNR {psnr_test}"
                 )
-            # if tb_writer:
-            #     tb_writer.add_scalar(
-            #         config["name"] + "/loss_viewpoint - l1_loss",
-            #         l1_test,
-            #         iteration,
-            #     )
-            #     tb_writer.add_scalar(
-            #         config["name"] + "/loss_viewpoint - psnr",
-            #         psnr_test,
-            #         iteration,
-            #     )
     torch.cuda.empty_cache()
     return test_psnr
 
@@ -632,21 +575,10 @@ def training_report(
         tb_writer.add_histogram("scene/opacity_histogram", opacity, iteration)
         tb_writer.add_scalar("total_points", gs_num, iteration)
 
-        # for i in range(3):
-        #     tb_writer.add_scalar(
-        #         "revolute/axis_{}".format(i), revolute.axis[i], iteration
-        #     )
-        #     tb_writer.add_scalar(
-        #         "revolute/pivot_{}".format(i), revolute.pivot[i], iteration
-        #     )
-
 
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
-    # lp = ModelParams(parser)
-    # op = OptimizationParams(parser)
-    # pp = PipelineParams(parser)
 
     parser.add_argument(
         "--cfg_file",
@@ -657,45 +589,14 @@ if __name__ == "__main__":
     parser.add_argument("--ip", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=6009)
     parser.add_argument("--detect_anomaly", action="store_true", default=False)
-    # parser.add_argument(
-    #     "--test_iterations",
-    #     nargs="+",
-    #     type=int,
-    #     default=[
-    #         # 5500,
-    #         7000,
-    #         10000,
-    #         14500,
-    #         16500,
-    #         19000,
-    #         22000,
-    #         24000,
-    #         32000,
-    #         35000,
-    #         38000,
-    #         42000,
-    #         46000,
-    #         49000,
-    #     ],
-    #     # default = [20000,]
-    # )
-    # parser.add_argument(
-    #     "--save_iterations",
-    #     nargs="+",
-    #     type=int,
-    #     default=[60000],
-    # )
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(sys.argv[1:])
-    # args.save_iterations.append(args.iterations)
 
     cfg = OmegaConf.load(args.cfg_file)
 
     # Initialize system state (RNG)
     safe_state(args.quiet)
 
-    # Start GUI server, configure and run training
-    # network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     training(cfg)
 
