@@ -697,12 +697,7 @@ if __name__ == "__main__":
     # Start GUI server, configure and run training
     # network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(
-        cfg,
-        # lp.extract(args),
-        # op.extract(args),
-        # pp.extract(args),
-    )
+    training(cfg)
 
     # All done
     print("\nTraining complete.")

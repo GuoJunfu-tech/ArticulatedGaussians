@@ -253,7 +253,10 @@ class GaussianModel:
         opacities = self._opacity.detach().cpu().numpy()
         scale = self._scaling.detach().cpu().numpy()
         rotation = self._rotation.detach().cpu().numpy()
-        mask = self._movable_mask.detach().cpu().unsqueeze(1).numpy()
+        try:
+            mask = self._movable_mask.detach().cpu().unsqueeze(1).numpy()
+        except AttributeError:
+            mask = np.zeros((xyz.shape[0], 1), dtype=np.float)
 
         dtype_full = [
             (attribute, "f4") for attribute in self.construct_list_of_attributes()

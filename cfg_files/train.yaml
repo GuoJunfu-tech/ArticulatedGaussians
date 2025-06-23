@@ -11,8 +11,8 @@ Pipeline:
   report_interval: 3000
 
   tb_writer: True
-  eval: False
-  save_its: [7000, 30000]
+  eval: True
+  save_its: [200, 7000, 30000]
   test_its: [7000, 10000, 14500, 16500]
   use_tb_writer: True
   convert_SHs_python: False
