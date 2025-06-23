@@ -46,16 +46,16 @@ except ImportError:
     TENSORBOARD_FOUND = False
 
 
-def training(cfg, opt, pipe, testing_iterations, saving_iterations):
-    ppl_params, paths, opt_params = cfg.Pipeline, cfg.Paths, cfg.Optimize
-    print(paths)
+def training(cfg):
+    ppl_params, paths, gs_params = cfg.Pipeline, cfg.Paths, cfg.Gaussians
+    (saving_iterations, testing_iterations) = (ppl_params.save_its, ppl_params.test_its)
 
     if ppl_params.use_tb_writer:
         tb_writer = prepare_output_and_logger(paths)
     else:
         tb_writer = False
 
-    gaussians = GaussianModel(cfg.Gaussians.sh_degree)
+    gaussians = GaussianModel(gs_params.sh_degree)
 
     deformArti = DeformModel()
 
@@ -80,11 +80,9 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
 
     mask = None
     d_xyz = None
-    d_rotations = None  # TODO delete after code finish
-    # start = opt.pretrain
-    start = 1
-    # end = opt.pretrain
-    end = opt.update_mask
+    d_rotations = None  # TODO data record
+
+    start, end = 1, ppl_params.end
     progress_bar = tqdm(range(end), desc="Training progress")
 
     deform = None
@@ -104,7 +102,7 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
         # Every 1000 its we increase the levels of SH up to a maximum degree
 
         if iteration == end:
-            if end == opt.update_mask:
+            if end == ppl_params.end:
                 object_name = paths.output_path.split("/")[-1]
                 render_results(
                     viewpoint_loader.get_cameras("start"),
@@ -112,7 +110,7 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
                     deform,
                     arti_params,
                     mask,
-                    pipe,
+                    ppl_params,
                     background,
                     type="gif",
                     note=f"final_{object_name}",
@@ -126,7 +124,7 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
             print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
             exit()
 
-        if opt.only_train_single_frame == iteration:
+        if ppl_params.only_train_single_frame == iteration:
             print("[Training]::step 1 is over, now training deformation net")
             print("[Training]::building knn trees")
             neighbor_sq_dist, neighbor_indices = knn(
@@ -139,7 +137,7 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
 
             continue
 
-        if opt.pretrain == iteration:
+        if ppl_params.deform_net == iteration:
             print("[Training]::step 2 is over, now update the mask")
 
             with torch.no_grad():
@@ -179,7 +177,7 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
 
             continue
 
-        if iteration == opt.update_params:
+        if iteration == ppl_params.rigid_trans:
             print("[Training]::step 3 is over, now update the articulated params")
             with torch.no_grad():
                 _, _, (d_xyz, d_rotations) = deformGS.step(gaussians)
@@ -197,14 +195,14 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
                 deform,
                 arti_params,
                 mask,
-                pipe,
+                ppl_params,
                 background,
                 type="gif",
                 note=f"param_{object_name}",
             )
             continue
 
-        if iteration < opt.only_train_single_frame:
+        if iteration < ppl_params.only_train_single_frame:
             if iteration % 1000 == 0:
                 gaussians.oneupSHdegree()  # TODO temporary
 
@@ -212,16 +210,16 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
                 status="start", load2device=ppl_params.load2gpu_on_the_fly
             )
             new_xyz, new_rotations = None, None
-        # elif opt.only_train_single_frame < iteration < opt.pretrain:
+        # elif ppl_params.only_train_single_frame < iteration < ppl_params.deform_net:
         #     viewpoint_cam_start, viewpoint_cam_end = (
         #         viewpoint_loader.get_viewpoint_cam_dual(dataset.load2gpu_on_the_fly)
         #     )
-        elif opt.only_train_single_frame < iteration < opt.update_params:
+        elif ppl_params.only_train_single_frame < iteration < ppl_params.rigid_trans:
             viewpoint_cam_end = viewpoint_loader.get_viewpoint_cam(
                 status="end", load2device=ppl_params.load2gpu_on_the_fly
             )
 
-        elif opt.update_params < iteration < opt.update_mask:
+        elif ppl_params.rigid_trans < iteration < ppl_params.end:
             viewpoint_cam_start, viewpoint_cam_end = (
                 viewpoint_loader.get_viewpoint_cam_dual(ppl_params.load2gpu_on_the_fly)
             )
@@ -231,22 +229,24 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
         # ------------------- core: deformation ----------------------------
 
         # before pretrain, we do not train the articulated params
-        if iteration > opt.only_train_single_frame:
-            gs_no_grad = True if iteration < opt.update_params else False
+        if iteration > ppl_params.only_train_single_frame:
+            gs_no_grad = True if iteration < ppl_params.rigid_trans else False
             # gs_no_grad = True
-            deform = deformGS if iteration < opt.pretrain else deformArti
+            deform = deformGS if iteration < ppl_params.deform_net else deformArti
             new_xyz, new_rotations, _ = deform.step(
                 gaussians, arti_params, gs_no_grad=gs_no_grad
             )
 
         # ---------------------- render --------------------------
         loss_start = 0.0
-        if (iteration < opt.only_train_single_frame) or (iteration > opt.update_params):
-            # or (iter_counter < opt.update_mask_interval / 2):
+        if (iteration < ppl_params.only_train_single_frame) or (
+            iteration > ppl_params.rigid_trans
+        ):
+            # or (iter_counter < ppl_params.end_interval / 2):
             render_pkg_re = render(
                 viewpoint_cam_start,
                 gaussians,
-                pipe,
+                ppl_params,
                 background,
                 gaussians.get_xyz,
                 gaussians.get_rotation,
@@ -264,18 +264,20 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
                 render_pkg_re["radii"],
             )
             gt_image_start = viewpoint_cam_start.original_image.cuda()
-            loss_start = ll1_ssim_loss(image_start, gt_image_start, opt.lambda_dssim)
+            loss_start = ll1_ssim_loss(
+                image_start, gt_image_start, gs_params.lambda_dssim
+            )
             if ppl_params.load2gpu_on_the_fly:
                 viewpoint_cam_start.load2device("cpu")
 
         loss_end = 0.0
-        if opt.only_train_single_frame < iteration:
-            # or ( opt.update_mask_interval / 2 <= iter_counter < opt.update_mask_interval
+        if ppl_params.only_train_single_frame < iteration:
+            # or ( ppl_params.end_interval / 2 <= iter_counter < ppl_params.end_interval
             # ):
             render_pkg_re = render(
                 viewpoint_cam_end,
                 gaussians,
-                pipe,
+                ppl_params,
                 background,
                 new_xyz,
                 new_rotations,
@@ -287,22 +289,22 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
                 render_pkg_re["radii"],
             )
             gt_image_end = viewpoint_cam_end.original_image.cuda()
-            loss_end = ll1_ssim_loss(image_end, gt_image_end, opt.lambda_dssim)
+            loss_end = ll1_ssim_loss(image_end, gt_image_end, gs_params.lambda_dssim)
 
         loss_arap = 0.0
-        if opt.only_train_single_frame < iteration < opt.pretrain:
+        if ppl_params.only_train_single_frame < iteration < ppl_params.deform_net:
             loss_arap = arap_loss(
                 new_xyz, neighbor_indices, neighbor_dist, neighbor_weight
             )
 
         loss_cd = 0.0
-        if opt.pretrain < iteration < opt.update_params:
+        if ppl_params.deform_net < iteration < ppl_params.rigid_trans:
             source_xyz = new_xyz[gaussians.get_movable_mask == 1]
             loss_cd = chamfer_distance_loss(deformed_xyz, source_xyz)
             # loss_cd = 0
 
         weighted_loss_arap = loss_arap
-        if iteration < opt.update_params:
+        if iteration < ppl_params.rigid_trans:
             # w = 1 / (loss_start.item() + 1e-6) * 1e-3
             loss = loss_end + loss_start + 0.1 * loss_cd + weighted_loss_arap
             # loss = loss_end + loss_start + weighted_loss_arap
@@ -341,7 +343,7 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
                     }
                 )
                 progress_bar.update(10)
-            if iteration == opt.iterations:
+            if iteration == ppl_params.end:
                 progress_bar.close()
 
             # ---------------------- training report -----------------------------
@@ -351,7 +353,7 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
                 "arap": weighted_loss_arap,
                 "cd": loss_cd,
             }
-            if opt.tb_writer and (iteration % opt.report_interval == 0):
+            if ppl_params.tb_writer and (iteration % ppl_params.report_interval == 0):
                 training_report(
                     tb_writer,
                     iteration,
@@ -361,7 +363,7 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
                     gaussians.get_opacity,
                     arti_params,
                 )
-            if opt.is_eval:
+            if ppl_params.eval:
                 if iteration in testing_iterations:
                     is_first_test = (
                         True if iteration == testing_iterations[0] else False
@@ -372,7 +374,7 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
                         scene_end,
                         gaussians,
                         render,
-                        (pipe, background),
+                        (ppl_params, background),
                         deform,
                         arti_params,
                         tb_writer,
@@ -394,9 +396,9 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
 
             # --------------------- Densification --------------------------
             # Keep track of max radii in image-space for pruning
-            if iteration < opt.stop_densify:
+            if iteration < gs_params.stop_densify:
                 is_densify = False
-                if iteration > opt.update_params:
+                if iteration > ppl_params.rigid_trans:
                     gaussians.max_radii2D[visibility_filter_end] = torch.max(
                         gaussians.max_radii2D[visibility_filter_end],
                         radii_end[visibility_filter_end],
@@ -408,8 +410,8 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
 
                     # FIXME sick code! should update together!!
 
-                if (iteration < opt.only_train_single_frame) or (
-                    iteration > opt.update_params
+                if (iteration < ppl_params.only_train_single_frame) or (
+                    iteration > ppl_params.rigid_trans
                 ):
                     gaussians.max_radii2D[visibility_filter_start] = torch.max(
                         gaussians.max_radii2D[visibility_filter_start],
@@ -422,43 +424,43 @@ def training(cfg, opt, pipe, testing_iterations, saving_iterations):
                     is_densify = True
 
                 if (
-                    iteration > opt.densify_from_iter
-                    and iteration % opt.densification_interval == 0
+                    iteration > gs_params.densify_from_iter
+                    and iteration % gs_params.densification_interval == 1
                     and is_densify
                 ):
                     is_densify = False
                     size_threshold = (
-                        20 if iteration > opt.opacity_reset_interval else None
+                        20 if iteration > gs_params.opacity_reset_interval else None
                     )
 
                     gaussians.densify_and_prune(
-                        opt.densify_grad_threshold,
+                        gs_params.densify_grad_threshold,
                         0.005,
                         scene_end.cameras_extent,
                         size_threshold,
                     )
 
-                    if iteration % opt.opacity_reset_interval == 0 or (
+                    if iteration % gs_params.opacity_reset_interval == 0 or (
                         ppl_params.white_background
-                        and iteration == opt.densify_from_iter
+                        and iteration == gs_params.densify_from_iter
                     ):
                         gaussians.reset_opacity()
 
             # --------------- optimization -------------------------
 
-            if opt.only_train_single_frame < iteration < opt.pretrain:
+            if ppl_params.only_train_single_frame < iteration < ppl_params.deform_net:
                 # either deformGS or deformArti
                 deform.optimizer.step()  # FIXME Deform.optimizer is now only deformGS
                 deform.optimizer.zero_grad()
                 deform.update_learning_rate(iteration)
 
-            if opt.pretrain < iteration:
+            if ppl_params.deform_net < iteration:
                 arti_params.optimizer.step()
                 arti_params.optimizer.zero_grad()
                 arti_params.scheduler.step()
 
-            if (iteration < opt.only_train_single_frame) or (
-                iteration > opt.update_params
+            if (iteration < ppl_params.only_train_single_frame) or (
+                iteration > ppl_params.rigid_trans
             ):
                 gaussians.optimizer.step()
                 gaussians.update_learning_rate(iteration)
@@ -642,9 +644,9 @@ def training_report(
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
-    lp = ModelParams(parser)
-    op = OptimizationParams(parser)
-    pp = PipelineParams(parser)
+    # lp = ModelParams(parser)
+    # op = OptimizationParams(parser)
+    # pp = PipelineParams(parser)
 
     parser.add_argument(
         "--cfg_file",
@@ -655,37 +657,37 @@ if __name__ == "__main__":
     parser.add_argument("--ip", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=6009)
     parser.add_argument("--detect_anomaly", action="store_true", default=False)
-    parser.add_argument(
-        "--test_iterations",
-        nargs="+",
-        type=int,
-        default=[
-            # 5500,
-            7000,
-            10000,
-            14500,
-            16500,
-            19000,
-            22000,
-            24000,
-            32000,
-            35000,
-            38000,
-            42000,
-            46000,
-            49000,
-        ],
-        # default = [20000,]
-    )
-    parser.add_argument(
-        "--save_iterations",
-        nargs="+",
-        type=int,
-        default=[60000],
-    )
+    # parser.add_argument(
+    #     "--test_iterations",
+    #     nargs="+",
+    #     type=int,
+    #     default=[
+    #         # 5500,
+    #         7000,
+    #         10000,
+    #         14500,
+    #         16500,
+    #         19000,
+    #         22000,
+    #         24000,
+    #         32000,
+    #         35000,
+    #         38000,
+    #         42000,
+    #         46000,
+    #         49000,
+    #     ],
+    #     # default = [20000,]
+    # )
+    # parser.add_argument(
+    #     "--save_iterations",
+    #     nargs="+",
+    #     type=int,
+    #     default=[60000],
+    # )
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(sys.argv[1:])
-    args.save_iterations.append(args.iterations)
+    # args.save_iterations.append(args.iterations)
 
     cfg = OmegaConf.load(args.cfg_file)
 
@@ -698,10 +700,8 @@ if __name__ == "__main__":
     training(
         cfg,
         # lp.extract(args),
-        op.extract(args),
-        pp.extract(args),
-        args.test_iterations,
-        args.save_iterations,
+        # op.extract(args),
+        # pp.extract(args),
     )
 
     # All done

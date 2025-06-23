@@ -3,11 +3,18 @@ Paths:
   output_path: "./output/test"
 
 Pipeline:
-  total_iterations: 55_000
-  save_its: [400, 1000, 7000, 30000]
+  # total_iterations: 25_000
+  only_train_single_frame: 4000
+  deform_net: 8_000
+  rigid_trans: 10_000
+  end: 15_000
+  report_interval: 3000
+
+  tb_writer: True
+  eval: False
+  save_its: [7000, 30000]
   test_its: [7000, 10000, 14500, 16500]
   use_tb_writer: True
-  eval: False
   convert_SHs_python: False
   compute_cov3D_python: False
   debug: False
@@ -18,21 +25,11 @@ Pipeline:
   data_device: "cuda"
   resolution: 1.0
 
-Optimize:
-  densify_from_iter: 50
-  densify_until_iter: 15_000
-  densify_grad_threshold: 0.0002
-  depth_l1_weight_init: 1.0
-  depth_l1_weight_final: 0.01
-  random_background: False
-  optimizer_type: "default"
-
 DeformNet:
   position_lr_init: 0.00016
   position_lr_final: 0.0000016
   position_lr_delay_mult: 0.01
   deform_lr_max_steps: 35_000
-
 
 Gaussians:
   sh_degree: 3
@@ -48,9 +45,17 @@ Gaussians:
   exposure_lr_delay_steps: 0
   exposure_lr_delay_mult: 0.0
   percent_dense: 0.01
-  lambda_dssim: 0.2
-  densification_interval: 50
-  opacity_reset_interval: 3000
   position_lr_init: 0.00016
   position_lr_final: 0.0000016
   position_lr_delay_mult: 0.01
+  densify_from_iter: 50
+  densify_until_iter: 15_000
+  densify_grad_threshold: 0.0002
+  stop_densify: 30_000
+  depth_l1_weight_init: 1.0
+  depth_l1_weight_final: 0.01
+  random_background: False
+  optimizer_type: "default"
+  densification_interval: 100
+  opacity_reset_interval: 3000
+  lambda_dssim: 0.2
