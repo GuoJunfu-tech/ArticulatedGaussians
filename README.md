@@ -51,8 +51,7 @@ We organize the datasets as follows:
 
 
 ## Pipeline
-
-TODO
+![pipeline](assets/pipeline.png)
 
 
 
@@ -64,8 +63,8 @@ TODO
 git clone https://github.com/GuoJunfu-tech/ArticulatedGaussians --recursive
 cd ArticulatedGaussians
 
-conda create -n deformable_gaussian_env python=3.7 # TODO rename
-conda activate deformable_gaussian_env
+conda create -n artigs python=3.7 
+conda activate artigs 
 
 # install pytorch
 pip install torch==1.13.1+cu116 torchvision==0.14.1+cu116 --extra-index-url https://download.pytorch.org/whl/cu116
@@ -74,24 +73,11 @@ pip install torch==1.13.1+cu116 torchvision==0.14.1+cu116 --extra-index-url http
 pip install -r requirements.txt
 ```
 
-
-
 ### Train
-```
-python train.py -s ./data/laptop_2_40 -m output/test_revolute --is_blender
-```
-
-
-~~You can also **train with the GUI:**~~ (Don't)
-
 ```shell
-python train_gui.py -s path/to/your/dataset -m output/exp-name --eval --is_blender
+python train.py 
 ```
-
-- click `start` to start training, and click `stop` to stop training.
-- The GUI viewer is still under development, many buttons do not have corresponding functions currently. We plan to :
-  - [ ] reload checkpoints from the pre-trained model.
-  - [ ] Complete the functions of the other vacant buttons in the GUI.
+You can modify the training parameters or data address in `cfg_files/train.yaml`. 
 
 
 
