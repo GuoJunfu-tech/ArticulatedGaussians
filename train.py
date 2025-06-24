@@ -99,7 +99,8 @@ def training(cfg):
         # Every 1000 its we increase the levels of SH up to a maximum degree
 
         if iteration == end:
-            if end == ppl_params.end:
+            if ppl_params.render_gif:
+                print("Renderding final results as GIF")
                 object_name = paths.output_path.split("/")[-1]
                 render_results(
                     viewpoint_loader.get_cameras("start"),
@@ -118,7 +119,10 @@ def training(cfg):
             save_motion_path = os.path.join(scene_start.output_path, "motion.json")
             arti_params.save_json(save_motion_path)
 
-            print("Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration))
+            if ppl_params.eval:
+                print(
+                    "Best PSNR = {} in Iteration {}".format(best_psnr, best_iteration)
+                )
             exit()
 
         if ppl_params.only_train_single_frame == iteration:
@@ -162,17 +166,17 @@ def training(cfg):
                 if arti_params.type == "revolute":
                     arti_params.theta_normalization()
 
-            render_results(
-                viewpoint_loader.get_cameras("start"),
-                gaussians,
-                deform,
-                arti_params,
-                mask,
-                ppl_params,
-                background,
-                type="gif",
-                note=f"param_{object_name}",
-            )
+            # render_results(
+            #     viewpoint_loader.get_cameras("start"),
+            #     gaussians,
+            #     deform,
+            #     arti_params,
+            #     mask,
+            #     ppl_params,
+            #     background,
+            #     type="gif",
+            #     note=f"param_{object_name}",
+            # )
             continue
 
         if iteration < ppl_params.only_train_single_frame:
@@ -447,17 +451,6 @@ def prepare_output_and_logger(args):
     else:
         print("Tensorboard not available: not logging progress")
     return tb_writer
-
-
-def vis(image):
-    """TODO delete in the future
-    this func is to visualize the mid results
-    """
-    from PIL import Image
-
-    image_np = image.detach().cpu().numpy().transpose((1, 2, 0))
-    img = Image.fromarray(np.uint8(image_np * 255), "RGB")
-    img.show()
 
 
 def eval(

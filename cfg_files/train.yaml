@@ -25,6 +25,8 @@ Pipeline:
   data_device: "cuda"
   resolution: 1.0
 
+  render_gif: True
+
 DeformNet:
   position_lr_init: 0.00016
   position_lr_final: 0.0000016
