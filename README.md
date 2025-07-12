@@ -81,7 +81,30 @@ You can modify the training parameters or data address in `cfg_files/train.yaml`
 
 
 
-### Render & Evaluation
+### Evaluation
+```shell
+mkdir eval
+```
+Then, put all the files from original [dataset](https://aspis.cmpt.sfu.ca/projects/paris/dataset.zip) into `eval` folder. This dataset is directly from [**PARIS**](https://github.com/3dlg-hcvc/paris?tab=readme-ov-file#data).
+Such as:
+```shell
+├── eval 
+    ├──foldchair
+    │   ├── 102255
+    │       ├── textured_objs # original data
+    │           ├── start # pics
+    │           ├── end # pics
+    │           ├── images # useless
+    │           ├── trans.json # use to eval the estimated pose
+    │           ├── axis_rotate_oppo.ply # useless
+    │           ├── axis_rotate.ply # useless
+```
 
-Not implemented yet
+#### Usage
 
+For example: 
+``` shell
+python eval.py -m ./output/foldchair/ -g ./eval/foldchair/103776/textured_objs
+```
+
+where `-m` is the path to the model you want to evaluate, and `-g` is the path to the ground truth data.
