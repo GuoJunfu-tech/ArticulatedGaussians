@@ -8,7 +8,6 @@ tensorboard_3d
 screenshots
 .idea
 data
-submodules
 rendered_img
 *.pkl
 load_data
